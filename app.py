@@ -14,9 +14,11 @@ with col1:
         st.subheader("🎛️ 推荐策略配置平台")
         st.markdown("**业务背景：** 金融推荐系统需要同时满足运营可控、算法个性化和系统兜底。")
         st.markdown("**核心设计：** 三级策略优先级（人工强干预 > 算法推荐 > 全量兜底）。")
+        # 指向刚建好的 pages 页面
         st.page_link("pages/1_推荐系统Demo.py", label="👉 进入推荐系统 Demo", icon="🚀")
 
 with col2:
     with st.container(border=True):
         st.subheader("📊 更多项目筹备中...")
+        st.markdown("这里将来可以展示你的其他产品项目。")
         st.button("敬请期待", disabled=True)
