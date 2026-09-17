@@ -1,7 +1,7 @@
 # 产品经理作品集 (Product Portfolio)
 
 ## 🌟 在线体验
-[点击访问我的作品集 Demo]([这里粘贴你刚刚改好的 Streamlit 短链接](https://saya-pm-portfolio.streamlit.app/%E6%8E%A8%E8%8D%90%E7%B3%BB%E7%BB%9FDemo))
+[点击访问我的作品集 Demo](https://saya-pm-portfolio.streamlit.app/%E6%8E%A8%E8%8D%90%E7%B3%BB%E7%BB%9FDemo)
 
 ## 🎛️ 项目一：推荐策略配置平台
 **业务背景**：金融推荐系统需要同时满足运营可控（人工干预）、算法个性化（协同过滤）以及系统兜底（全量保底）。
