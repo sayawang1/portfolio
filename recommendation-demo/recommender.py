@@ -52,4 +52,28 @@ def _content_based_recommend(user_id, interactions, products, top_n):
         (products['category'].isin(liked_cats)) &
         (~products['product_id'].isin(user_rated)) &
         (products['status'] == '在售')
-    ].nlargest(top_n, 'popularity')
+    ].nlargest(top_n, 'popularity')def bytedance_personalized(user_id, interactions, products, top_n=5):
+    """
+    字节千人千面（简化版）
+    1. 多路召回：热门 + 分类偏好 + 协同召回
+    2. 排序：按流行度
+    """
+    candidates = set()
+
+    # 路1：热门召回
+    hot = products[products["status"] == "在售"].nlargest(20, "popularity")
+    candidates.update(hot["product_id"].tolist())
+
+    # 路2：用户偏好分类召回
+    user_r = interactions[interactions["user_id"] == user_id]
+    if not user_r.empty:
+        liked = user_r.merge(products[["product_id", "category"]], on="product_id", how="left")
+        liked_cats = liked["category"].dropna().unique().tolist()
+        for cat in liked_cats:
+            cat_items = products[(products["category"] == cat) & (products["status"] == "在售")].head(10)
+            candidates.update(cat_items["product_id"].tolist())
+
+    # 排序
+    cand_df = products[products["product_id"].isin(candidates)].copy()
+    cand_df = cand_df.sort_values("popularity", ascending=False).head(top_n)
+    return cand_df
