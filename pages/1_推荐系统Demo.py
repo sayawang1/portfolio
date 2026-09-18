@@ -1,122 +1,77 @@
-"""推荐系统运营后台"""
+"""推荐系统 Demo - 前端展示页（配置后的效果）"""
 import streamlit as st
-import os
 import sys
+import os
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.config_io import load_json, save_json, get_config_dir
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "recommendation-demo"))
 
-CONFIG_DIR = get_config_dir("recommendation-demo")
+from data_generator import generate_products, generate_users, generate_interactions
+from recommender import build_item_similarity
+from strategy_engine import execute_strategy
 
-st.set_page_config(page_title="推荐系统运营后台", page_icon="🎛️", layout="wide")
-st.title("🎛️ 推荐系统运营后台")
+st.set_page_config(page_title="推荐系统 Demo", page_icon="🛒", layout="wide")
+st.title("🛒 推荐系统 Demo - 前端效果")
+st.markdown("**三层优先级：人工强干预 > 算法推荐 > 全量兜底**")
 
-tab1, tab2, tab3, tab4 = st.tabs(["🎯 坑位管理", "✋ 人工强干预", "🧠 算法配置", "🧪 AB测试"])
+# 侧边栏：加一个清除缓存按钮
+if st.sidebar.button("🔄 刷新配置（清缓存）"):
+    st.cache_data.clear()
+    st.success("缓存已清除，请重新选择用户查看。")
 
-# ---------- Tab 1: 坑位管理 ----------
-with tab1:
-    st.subheader("坑位列表")
-    slots_path = os.path.join(CONFIG_DIR, "slots.json")
-    slots = load_json(slots_path, {"slots": []})
-    st.dataframe(slots["slots"], use_container_width=True)
+# 数据
+products = generate_products()
+users = generate_users()
+interactions = generate_interactions(users, products)
+item_sim = build_item_similarity(interactions)
 
-    st.divider()
-    st.subheader("新增坑位")
-    with st.form("add_slot"):
-        sid = st.text_input("坑位ID", "app_detail_bottom")
-        sname = st.text_input("坑位名称", "详情页底部推荐")
-        platform = st.selectbox("平台", ["app", "web"])
-        if st.form_submit_button("保存"):
-            slots["slots"].append({"slot_id": sid, "slot_name": sname, "platform": platform, "enabled": True})
-            save_json(slots_path, slots)
-            st.success("保存成功！")
-            st.rerun()
+# 侧边栏
+selected_uid = st.sidebar.selectbox("选择用户", users["user_id"].head(50))
+user = users[users["user_id"] == selected_uid].iloc[0]
 
-# ---------- Tab 2: 人工强干预 ----------
-with tab2:
-    st.subheader("人工强干预配置")
-    st.caption("优先级最高，命中后直接覆盖算法。勾选『作为兜底』则只在算法失败时生效。")
+slot_options = {
+    "app_home_banner": "APP首页Banner",
+    "app_home_feed":   "APP首页信息流",
+    "web_sidebar":     "网页侧边栏",
+}
+slot_id = st.sidebar.selectbox("选择坑位", list(slot_options.keys()),
+                               format_func=lambda x: slot_options[x])
 
-    slots = load_json(os.path.join(CONFIG_DIR, "slots.json"), {"slots": []})
-    slot_options = [s["slot_id"] for s in slots["slots"]]
+# 用户卡片
+st.subheader("👤 当前用户画像")
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("用户ID", user["user_id"])
+c2.metric("VIP", "是" if user["is_vip"] == 1 else "否")
+c3.metric("资产等级", user["aum_level"])
+c4.metric("风险承受", f"R{user['risk_tolerance']}")
 
-    with st.form("manual_form"):
-        slot_id = st.selectbox("选择坑位", slot_options)
-        items = st.text_input("指定内容ID（逗号分隔）", "P001,P002")
-        target_type = st.selectbox("目标人群", ["all", "tag"])
-        target_condition = st.text_input("标签条件（Python表达式）", "is_vip == 1")
-        pct = st.slider("分流比例（%）", 0, 100, 20, 5)
-        is_fallback = st.checkbox("作为兜底人工配置（算法失败时才用）")
-        remark = st.text_input("备注", "VIP客户人工强推")
-        if st.form_submit_button("保存"):
-            path = os.path.join(CONFIG_DIR, "manual_config.json")
-            data = load_json(path, {"manual_rules": []})
-            data["manual_rules"].append({
-                "rule_id": f"rule_{len(data['manual_rules'])+1:03d}",
-                "slot_id": slot_id,
-                "priority": 1 if not is_fallback else 99,
-                "enabled": True,
-                "target_type": target_type,
-                "target_condition": target_condition,
-                "items": [x.strip() for x in items.split(",") if x.strip()],
-                "traffic_pct": pct,
-                "start_time": "2025-01-01 00:00:00",
-                "end_time": "2030-12-31 23:59:59",
-                "operator": "运营",
-                "remark": remark,
-                "is_fallback": is_fallback,
-            })
-            save_json(path, data)
-            st.success("保存成功！")
-            st.rerun()
+st.divider()
 
-    st.divider()
-    st.subheader("当前人工规则")
-    manual = load_json(os.path.join(CONFIG_DIR, "manual_config.json"), {"manual_rules": []})
-    st.dataframe(manual["manual_rules"], use_container_width=True)
+# 执行策略
+result = execute_strategy(slot_id, user, interactions, item_sim, products)
 
-# ---------- Tab 3: 算法配置 ----------
-with tab3:
-    st.subheader("算法绑定")
-    slots = load_json(os.path.join(CONFIG_DIR, "slots.json"), {"slots": []})
-    slot_options = [s["slot_id"] for s in slots["slots"]]
-    algo_data = load_json(os.path.join(CONFIG_DIR, "algorithm_config.json"),
-                          {"algorithms": [], "slot_algorithm_bind": {}})
-    algo_options = [a["algo_id"] for a in algo_data["algorithms"]]
+st.subheader("🎯 命中策略")
+if result['source'] == 'manual':
+    st.success(f"**{result['strategy_name']}**（运营人工强干预，直接覆盖算法）")
+elif result['source'] == 'algorithm':
+    st.info(f"**{result['strategy_name']}**（算法推荐，AB组：{result.get('ab_group', '-')}）")
+else:
+    st.warning(f"**{result['strategy_name']}**（算法失败，走全量兜底）")
 
-    with st.form("algo_form"):
-        slot_id = st.selectbox("选择坑位", slot_options, key="algo_slot")
-        algo_id = st.selectbox("绑定算法", algo_options)
-        if st.form_submit_button("保存"):
-            algo_data.setdefault("slot_algorithm_bind", {}).setdefault(slot_id, {})["algo_id"] = algo_id
-            save_json(os.path.join(CONFIG_DIR, "algorithm_config.json"), algo_data)
-            st.success("保存成功！")
+st.divider()
 
-    st.divider()
-    st.subheader("算法库")
-    st.dataframe(algo_data["algorithms"], use_container_width=True)
-
-# ---------- Tab 4: AB测试 ----------
-with tab4:
-    st.subheader("AB测试配置")
-    slots = load_json(os.path.join(CONFIG_DIR, "slots.json"), {"slots": []})
-    slot_options = [s["slot_id"] for s in slots["slots"]]
-    algo_data = load_json(os.path.join(CONFIG_DIR, "algorithm_config.json"),
-                          {"algorithms": [], "slot_algorithm_bind": {}})
-    algo_options = [a["algo_id"] for a in algo_data["algorithms"]]
-
-    with st.form("ab_form"):
-        slot_id = st.selectbox("选择坑位", slot_options, key="ab_slot")
-        enabled = st.checkbox("启用AB测试", value=True)
-        ratio = st.slider("A组流量比例（%）", 0, 100, 50, 5)
-        group_a = st.selectbox("A组算法", algo_options, index=0)
-        group_b = st.selectbox("B组算法", algo_options, index=len(algo_options)-1)
-        if st.form_submit_button("保存"):
-            algo_data.setdefault("slot_algorithm_bind", {}).setdefault(slot_id, {})["ab_test"] = {
-                "enabled": enabled,
-                "group_a_ratio": ratio,
-                "group_a_algo": group_a,
-                "group_b_algo": group_b,
-            }
-            save_json(os.path.join(CONFIG_DIR, "algorithm_config.json"), algo_data)
-            st.success("保存成功！")
+# 推荐结果展示（前端卡片样式）
+st.subheader("📋 前端推荐结果")
+items = result.get("items")
+if items is not None and len(items) > 0:
+    # 使用列布局展示卡片
+    cols = st.columns(3)
+    for idx, row in items.iterrows():
+        with cols[idx % 3]:
+            with st.container(border=True):
+                st.markdown(f"### {row.get('name', row['product_id'])}")
+                st.caption(f"类别：{row.get('category', '-')}")
+                st.caption(f"风险等级：R{row.get('risk_level', '-')}")
+                st.caption(f"热度：{row.get('popularity', '-')}")
+                st.button("查看详情", key=row['product_id'], disabled=True)
+else:
+    st.warning("暂无推荐结果，请检查运营后台配置。")
