@@ -71,13 +71,22 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("🎛️ 推荐系统运营后台")
-st.caption("按图1原型：基础配置 / 算法策略 / 人工策略")
+st.caption("人工 > 算法 > 兜底 ｜ 权重竞争：人工权重×100+算法权重")
 
 TIME_OPTIONS = ["2026 Q3 大促周期 (9/1-9/30)", "长期有效", "2026 双十一周期 (11/1-11/11)", "自定义时间段"]
 AUDIENCE_OPTIONS = ["全量用户", "精准·VIP会员", "新用户", "高净值客户", "活跃用户", "流失预警用户"]
 MODEL_OPTIONS = ["DeepFM v3（精排）", "双塔召回（DSSM）", "字节千人千面", "协同过滤 ItemCF", "内容召回 ContentBased", "热门兜底 Popularity"]
 CONDITION_OPTIONS = ["设备: iOS/Android", "地域: 上海/杭州", "时段: 10:00-22:00", "用户: 已登录"]
 ADV_OPTIONS = ["冷启动: 新用户走热门", "频控: 每用户日 3 次", "去重: 排除已点击"]
+
+AUDIENCE_COND_MAP = {
+    "全量用户": "",
+    "精准·VIP会员": "is_vip == 1",
+    "新用户": "is_new == 1",
+    "高净值客户": "aum_level == '高'",
+    "活跃用户": "is_active == 1",
+    "流失预警用户": "is_churn_risk == 1",
+}
 
 slot_list, slot_source = get_slots_with_source()
 slot_options = [s["slot_id"] for s in slot_list]
@@ -90,7 +99,7 @@ rules = manual_data.get("manual_rules", [])
 if rules:
     for idx, rule in enumerate(rules):
         with st.container(border=True):
-            c1, c2, c3, c4, c5, c6 = st.columns([1.5, 2.5, 1.3, 1.3, 1.3, 1.2])
+            c1, c2, c3, c4, c5, c6, c7 = st.columns([1.1, 2.0, 1.2, 1.2, 1.5, 1.0, 0.9])
             with c1:
                 st.markdown(f"**{rule['rule_id']}**")
             with c2:
@@ -98,10 +107,13 @@ if rules:
             with c3:
                 st.markdown(f"人工权重: **{rule.get('manual_weight', '-')}**")
             with c4:
-                st.markdown(f"分流: {rule.get('traffic_pct', '-')}%")
+                st.markdown(f"算法权重: **{rule.get('algo_weight', '-')}**")
             with c5:
                 st.markdown(f"客群: {rule.get('audience_label', '-')}")
             with c6:
+                fb = "是" if rule.get("is_fallback") else "否"
+                st.markdown(f"兜底: {fb}")
+            with c7:
                 if st.button("🗑️ 删除", key=f"del_{idx}"):
                     rules.pop(idx)
                     manual_data["manual_rules"] = rules
@@ -116,7 +128,7 @@ st.divider()
 col_left, col_right = st.columns(2)
 
 with col_left:
-    st.markdown("### 基础配置")
+    st.markdown("### 基础配置（大范围）")
     with st.container(border=True):
         slot_id = st.selectbox("位置选择", slot_options, index=0, key="base_slot")
         time_window = st.selectbox("生效时间", TIME_OPTIONS, index=0, key="base_time")
@@ -129,7 +141,7 @@ with col_left:
             with d2:
                 custom_end = st.date_input("结束日期", value=datetime(2026, 12, 31))
 
-        audience = st.selectbox("客群标签", AUDIENCE_OPTIONS, index=0, key="base_audience")
+        base_audience = st.selectbox("基础客群（大范围）", AUDIENCE_OPTIONS, index=0, key="base_audience")
         full_release = st.checkbox("全量发布（跳过灰度，对所有匹配用户生效）", value=True)
 
 with col_right:
@@ -138,11 +150,21 @@ with col_right:
         model = st.selectbox("模型选择", MODEL_OPTIONS, index=0, key="algo_model")
         top_k = st.number_input("召回数量 Top-K", min_value=10, max_value=1000, value=200, step=10)
         algo_weight = st.slider("策略权重（与人工竞争用，0-100）", 0, 100, 65, 5)
-        ab_enabled = st.toggle("AB 测试", value=True)
+
+        st.markdown("**AB 测试（作用于算法层）**")
+        ab_enabled = st.toggle("启用 AB 测试", value=True)
         group_a = 70
+        ab_group_a_algo = "协同过滤 ItemCF"
+        ab_group_b_algo = "字节千人千面"
         if ab_enabled:
-            group_a = st.slider("实验组 %", 0, 100, 70, 5)
-            st.caption(f"A组 {group_a}% ｜ 对照组 {100 - group_a}%")
+            group_a = st.slider("A 组流量 %", 0, 100, 70, 5)
+            st.caption(f"A组 {group_a}% ｜ B组 {100 - group_a}%")
+            d1, d2 = st.columns(2)
+            with d1:
+                ab_group_a_algo = st.selectbox("A 组算法", MODEL_OPTIONS, index=3, key="ab_a")
+            with d2:
+                ab_group_b_algo = st.selectbox("B 组算法", MODEL_OPTIONS, index=2, key="ab_b")
+
         with st.expander("模型参数（展开）"):
             st.text_input("recall_num", value="200")
             st.text_input("rank_num", value="20")
@@ -150,15 +172,20 @@ with col_right:
 st.divider()
 
 # ========== 人工策略 ==========
-st.markdown("### 人工策略")
+st.markdown("### 人工策略（大范围中的小范围）")
 with st.container(border=True):
     c1, c2 = st.columns(2)
     with c1:
-        manual_audience = st.selectbox("客群标签", AUDIENCE_OPTIONS, index=1, key="manual_audience")
+        manual_audiences = st.multiselect(
+            "人工客群（可多选，AND 关系；不选则继承基础客群）",
+            AUDIENCE_OPTIONS,
+            default=["精准·VIP会员"],
+            key="manual_audience",
+        )
         icon_file = st.text_input("图标展示", value="campaign_icon.png")
         jump_url = st.text_input("跳转链接", value="https://app.example.com/promo/2026q3")
         manual_weight = st.slider("人工权重（与算法竞争用，0-100）", 0, 100, 80, 5)
-        is_fallback = st.toggle("是否兜底", value=False)
+        is_fallback = st.toggle("作为兜底配置（人工和算法都未命中时生效）", value=False)
     with c2:
         st.markdown("**生效条件**")
         selected_conds = st.multiselect("已选条件", CONDITION_OPTIONS, default=CONDITION_OPTIONS)
@@ -186,17 +213,23 @@ with c_publish:
         else:
             start_str, end_str = "2026-09-01 00:00:00", "2026-09-30 23:59:59"
 
-        # 客群 → 条件映射
-        if "VIP" in manual_audience:
-            target_type, target_condition = "tag", "is_vip == 1"
-        elif manual_audience == "新用户":
-            target_type, target_condition = "tag", "is_new == 1"
-        elif manual_audience == "高净值客户":
-            target_type, target_condition = "tag", "aum_level == '高'"
-        elif manual_audience == "活跃用户":
-            target_type, target_condition = "tag", "is_active == 1"
-        else:
+        conds = []
+        for a in manual_audiences:
+            if a == "全量用户":
+                conds = []
+                break
+            c = AUDIENCE_COND_MAP.get(a, "")
+            if c:
+                conds.append(c)
+
+        if not conds:
             target_type, target_condition = "all", ""
+            audience_label = "继承基础客群"
+        else:
+            target_type, target_condition = "tag", " and ".join(conds)
+            audience_label = " + ".join(manual_audiences)
+
+        base_cond = AUDIENCE_COND_MAP.get(base_audience, "")
 
         manual_data = load_json("manual_config.json", {"manual_rules": []})
         manual_data["manual_rules"].append({
@@ -204,18 +237,21 @@ with c_publish:
             "slot_id": slot_id,
             "position_id": "p1",
             "enabled": True,
+            "base_audience": base_audience,
+            "base_condition": base_cond,
             "target_type": target_type,
             "target_condition": target_condition,
-            "audience_label": manual_audience,
+            "audience_label": audience_label,
             "items": ["P001", "P002", "P003"],
             "traffic_pct": 100,
             "manual_weight": manual_weight,
+            "algo_weight": algo_weight,
             "icon": icon_file,
             "jump_url": jump_url,
             "start_time": start_str,
             "end_time": end_str,
             "is_fallback": is_fallback,
-            "remark": f"{manual_audience} 人工强推",
+            "remark": f"{audience_label} 人工强推",
         })
         save_json("manual_config.json", manual_data)
 
@@ -223,11 +259,12 @@ with c_publish:
         algo_data.setdefault("slot_algorithm_bind", {})[slot_id] = {
             "algo_id": "bytedance_ps" if "字节" in model else "item_cf",
             "algo_weight": algo_weight,
+            "base_condition": base_cond,
             "ab_test": {
                 "enabled": ab_enabled,
                 "group_a_ratio": group_a if ab_enabled else 100,
-                "group_a_algo": "item_cf",
-                "group_b_algo": "bytedance_ps",
+                "group_a_algo": "item_cf" if "ItemCF" in ab_group_a_algo else "bytedance_ps",
+                "group_b_algo": "bytedance_ps" if "字节" in ab_group_b_algo else "item_cf",
             },
         }
         save_json("algorithm_config.json", algo_data)
@@ -238,4 +275,3 @@ st.markdown(
     f'<p class="footer-note">数据源: 外部坑位系统（{slot_source}） ｜ 配置目录: recommendation-demo/configs ｜ 今日: 2026-09-21</p>',
     unsafe_allow_html=True,
 )
-  
