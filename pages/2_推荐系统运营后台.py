@@ -1,63 +1,112 @@
-"""推荐系统运营后台 - 照图1原型设计（深色）"""
+"""推荐系统运营后台 - 深色 + 白底输入框（整段复制即可）"""
 import streamlit as st
-import os, sys, json
+import os
+import sys
+import json
+from datetime import datetime
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.config_io import load_json, save_json, get_config_dir
 
-CONFIG_DIR = get_config_dir("recommendation-demo")
+# ---------- 配置读写（不依赖 common，避免路径报错） ----------
+CONFIG_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "recommendation-demo", "configs"
+)
+os.makedirs(CONFIG_DIR, exist_ok=True)
 
-st.set_page_config(page_title="推荐系统运营后台", page_icon="🎛️", layout="wide", initial_sidebar_state="collapsed")
 
-# ============ 深色主题 CSS（图2风格） ============
+def load_json(filename, default=None):
+    path = os.path.join(CONFIG_DIR, filename)
+    if not os.path.exists(path):
+        return default if default is not None else {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return default if default is not None else {}
+
+
+def save_json(filename, data):
+    path = os.path.join(CONFIG_DIR, filename)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+# ---------- 页面配置 ----------
+st.set_page_config(
+    page_title="推荐系统运营后台",
+    page_icon="🎛️",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+
+# ---------- 深色主题 + 白底输入框 CSS ----------
 st.markdown("""
 <style>
-    /* 整体背景 */
+    /* 整体背景深色 */
     .stApp { background-color: #0B0E11; color: #E6E6E6; }
     section[data-testid="stSidebar"] { background-color: #111417; }
 
-    /* 标题 */
-    h1, h2, h3, h4 { color: #FFFFFF !important; }
+    /* 标题白色 */
+    h1, h2, h3, h4, h5 { color: #FFFFFF !important; }
+    label, .stMarkdown, p { color: #E6E6E6 !important; }
+
+    /* ⭐ 关键：所有输入框 / 下拉框 / 数字框 改成白底黑字 ⭐ */
+    .stTextInput input,
+    .stNumberInput input,
+    .stTextArea textarea {
+        background-color: #FFFFFF !important;
+        color: #000000 !important;
+        border: 1px solid #CCCCCC !important;
+        border-radius: 6px !important;
+    }
+
+    /* selectbox 白底黑字 */
+    div[data-baseweb="select"] > div {
+        background-color: #FFFFFF !important;
+        color: #000000 !important;
+        border: 1px solid #CCCCCC !important;
+    }
+    div[data-baseweb="select"] span,
+    div[data-baseweb="select"] div {
+        color: #000000 !important;
+    }
+
+    /* 下拉弹出层白底黑字 */
+    div[data-baseweb="popover"] div,
+    ul[role="listbox"] li {
+        background-color: #FFFFFF !important;
+        color: #000000 !important;
+    }
+    ul[role="listbox"] li:hover {
+        background-color: #F0F0F0 !important;
+    }
+
+    /* slider 轨道 */
+    .stSlider [data-baseweb="slider"] div { color: #000000 !important; }
 
     /* 卡片容器 */
     div[data-testid="stVerticalBlockBorderWrapper"] {
         background-color: #151A1F;
         border: 1px solid #232A31;
         border-radius: 10px;
-        padding: 12px;
+        padding: 14px;
     }
 
-    /* 输入框 */
-    .stTextInput>div>div>input,
-    .stNumberInput>div>div>input,
-    .stSelectbox>div>div>div,
-    .stMultiSelect>div>div>div {
-        background-color: #1C2228 !important;
-        color: #E6E6E6 !important;
-        border: 1px solid #2A323A !important;
-        border-radius: 6px !important;
-    }
-
-    /* 按钮 */
+    /* 主按钮红色 */
     .stButton>button {
-        background-color: #FF4B4B; color: white; border-radius: 8px;
-        border: none; padding: 8px 20px; font-weight: 600;
+        background-color: #FF4B4B; color: #FFFFFF;
+        border: none; border-radius: 8px;
+        padding: 8px 20px; font-weight: 600;
     }
     .stButton>button:hover { background-color: #E03E3E; }
 
-    /* Tab */
-    .stTabs [data-baseweb="tab"] { color: #9AA5B1; }
-    .stTabs [aria-selected="true"] { color: #FF4B4B !important; }
-
     /* 标签徽章 */
     .badge {
-        display: inline-block; padding: 2px 10px; margin-right: 6px;
+        display: inline-block; padding: 3px 10px; margin: 3px 6px 3px 0;
         background-color: #1F2937; color: #9CA3AF;
         border-radius: 10px; font-size: 12px;
     }
-    .badge-active { background-color: #FF4B4B; color: white; }
-
-    /* 底部说明 */
     .footer-note { color: #6B7280; font-size: 12px; }
 </style>
 """, unsafe_allow_html=True)
@@ -65,31 +114,80 @@ st.markdown("""
 st.title("🎛️ 推荐系统运营后台")
 st.caption("按图1原型：基础配置 / 算法策略 / 人工策略")
 
-# 读取坑位
-slots = load_json(os.path.join(CONFIG_DIR, "slots.json"), {"slots": []})
-slot_options = [s["slot_id"] for s in slots["slots"]]
+# ---------- 可测试的默认数据 ----------
+DEFAULT_SLOTS = [
+    {"slot_id": "app_home_banner", "slot_name": "APP首页Banner", "platform": "app"},
+    {"slot_id": "app_home_feed",   "slot_name": "APP首页信息流", "platform": "app"},
+    {"slot_id": "web_sidebar",     "slot_name": "网页侧边栏",     "platform": "web"},
+    {"slot_id": "ad_layer_p1",     "slot_name": "广告层-位置1",   "platform": "app"},
+]
+
+TIME_OPTIONS = [
+    "2026 Q3 大促周期 (9/1-9/30)",
+    "长期有效",
+    "2026 双十一周期 (11/1-11/11)",
+    "自定义时间段",
+]
+
+AUDIENCE_OPTIONS = [
+    "全量用户",
+    "精准·VIP会员",
+    "新用户",
+    "高净值客户",
+    "活跃用户",
+    "流失预警用户",
+]
+
+MODEL_OPTIONS = [
+    "DeepFM v3（精排）",
+    "双塔召回（DSSM）",
+    "字节千人千面",
+    "协同过滤 ItemCF",
+    "内容召回 ContentBased",
+    "热门兜底 Popularity",
+]
+
+CONDITION_OPTIONS = [
+    "设备: iOS/Android",
+    "地域: 上海/杭州",
+    "时段: 10:00-22:00",
+    "用户: 已登录",
+]
+
+ADV_OPTIONS = [
+    "冷启动: 新用户走热门",
+    "频控: 每用户日 3 次",
+    "去重: 排除已点击",
+]
+
+# ---------- 读取坑位（兜底默认） ----------
+slots_data = load_json("slots.json", {"slots": DEFAULT_SLOTS})
+slot_list = slots_data.get("slots", DEFAULT_SLOTS)
+if not slot_list:
+    slot_list = DEFAULT_SLOTS
+slot_options = [s["slot_id"] for s in slot_list]
 
 # ============ 第一行：基础配置 + 算法策略 ============
 col_left, col_right = st.columns(2)
 
 with col_left:
-    st.markdown("#### 基础配置")
+    st.markdown("### 基础配置")
     with st.container(border=True):
-        slot_id = st.selectbox("位置选择", slot_options, key="base_slot")
-        time_window = st.selectbox("生效时间", ["2026 Q3 大促周期 (9/1-9/30)", "长期有效", "自定义"])
-        audience = st.selectbox("客群标签", ["全量用户", "精准·VIP会员", "新用户"], key="base_audience")
-        st.checkbox("全量发布（跳过灰度，对所有匹配用户生效）", value=True)
+        slot_id = st.selectbox("位置选择", slot_options, index=0, key="base_slot")
+        time_window = st.selectbox("生效时间", TIME_OPTIONS, index=0, key="base_time")
+        audience = st.selectbox("客群标签", AUDIENCE_OPTIONS, index=0, key="base_audience")
+        full_release = st.checkbox("全量发布（跳过灰度，对所有匹配用户生效）", value=True)
 
 with col_right:
-    st.markdown("#### 算法策略")
+    st.markdown("### 算法策略")
     with st.container(border=True):
-        model = st.selectbox("模型选择", ["DeepFM v3（精排）", "双塔召回", "字节千人千面"])
-        top_k = st.number_input("召回数量 Top-K", value=200, step=10)
+        model = st.selectbox("模型选择", MODEL_OPTIONS, index=0, key="algo_model")
+        top_k = st.number_input("召回数量 Top-K", min_value=10, max_value=1000, value=200, step=10)
         algo_weight = st.slider("策略权重（与人工竞争用，0-100）", 0, 100, 65, 5)
         ab_enabled = st.toggle("AB 测试", value=True)
         if ab_enabled:
             group_a = st.slider("实验组 %", 0, 100, 70, 5)
-            st.caption(f"A组 {group_a}% ｜ 对照组 {100-group_a}%")
+            st.caption(f"A组 {group_a}% ｜ 对照组 {100 - group_a}%")
         with st.expander("模型参数（展开）"):
             st.text_input("recall_num", value="200")
             st.text_input("rank_num", value="20")
@@ -97,71 +195,70 @@ with col_right:
 st.divider()
 
 # ============ 第二行：人工策略 ============
-st.markdown("#### 人工策略")
+st.markdown("### 人工策略")
 with st.container(border=True):
     c1, c2 = st.columns(2)
     with c1:
-        manual_audience = st.selectbox("客群标签", ["精准·VIP会员", "全量用户", "新用户"], key="manual_audience")
-        icon_file = st.text_input("图标展示", "campaign_icon.png")
-        jump_url = st.text_input("跳转链接", "https://app.example.com/promo/2026q3")
+        manual_audience = st.selectbox("客群标签", AUDIENCE_OPTIONS, index=1, key="manual_audience")
+        icon_file = st.text_input("图标展示", value="campaign_icon.png")
+        jump_url = st.text_input("跳转链接", value="https://app.example.com/promo/2026q3")
         manual_weight = st.slider("权重分配", 0, 100, 80, 5)
-        is_fallback = st.toggle("是否兜底", value=True)
+        is_fallback = st.toggle("是否兜底", value=False)
     with c2:
         st.markdown("**生效条件**")
-        st.markdown(
-            '<span class="badge">设备: iOS/Android</span>'
-            '<span class="badge">地域: 上海/杭州</span>'
-            '<span class="badge">时段: 10:00-22:00</span>'
-            '<span class="badge">用户: 已登录</span>',
-            unsafe_allow_html=True
-        )
-        st.button("+ 添加生效条件", key="add_cond")
+        selected_conds = st.multiselect("已选条件", CONDITION_OPTIONS, default=CONDITION_OPTIONS)
+        badges_html = "".join([f'<span class="badge">{c}</span>' for c in selected_conds])
+        st.markdown(badges_html, unsafe_allow_html=True)
 
         st.markdown("**高级设置**")
-        st.markdown(
-            '<span class="badge">冷启动: 新用户走热门</span>'
-            '<span class="badge">频控: 每用户日 3 次</span>'
-            '<span class="badge">去重: 排除已点击</span>',
-            unsafe_allow_html=True
-        )
-        st.button("+ 添加高级设置", key="add_adv")
+        selected_adv = st.multiselect("已选高级设置", ADV_OPTIONS, default=ADV_OPTIONS)
+        adv_html = "".join([f'<span class="badge">{a}</span>' for a in selected_adv])
+        st.markdown(adv_html, unsafe_allow_html=True)
 
 st.divider()
 
 # ============ 底部操作 ============
 c_cancel, c_draft, c_publish = st.columns([6, 2, 2])
 with c_draft:
-    st.button("保存草稿", use_container_width=True)
+    if st.button("保存草稿", use_container_width=True):
+        st.info("草稿已保存（演示）")
 with c_publish:
     if st.button("发布策略", use_container_width=True):
-        data = load_json(os.path.join(CONFIG_DIR, "manual_config.json"), {"manual_rules": []})
-        data["manual_rules"].append({
-            "rule_id": f"rule_{len(data['manual_rules'])+1:03d}",
+        # 保存人工规则
+        manual_data = load_json("manual_config.json", {"manual_rules": []})
+        manual_data["manual_rules"].append({
+            "rule_id": f"rule_{len(manual_data['manual_rules']) + 1:03d}",
             "slot_id": slot_id,
+            "position_id": "p1",
             "enabled": True,
-            "target_type": "tag",
+            "target_type": "tag" if "VIP" in manual_audience else "all",
             "target_condition": "is_vip == 1" if "VIP" in manual_audience else "",
-            "items": ["P001", "P002"],
+            "items": ["P001", "P002", "P003"],
             "traffic_pct": 100,
             "manual_weight": manual_weight,
-            "algo_weight": algo_weight,
             "start_time": "2025-01-01 00:00:00",
             "end_time": "2030-12-31 23:59:59",
             "is_fallback": is_fallback,
-            "remark": f"{manual_audience} 人工强推"
+            "remark": f"{manual_audience} 人工强推",
         })
-        save_json(os.path.join(CONFIG_DIR, "manual_config.json"), data)
+        save_json("manual_config.json", manual_data)
 
-        algo_data = load_json(os.path.join(CONFIG_DIR, "algorithm_config.json"),
-                              {"algorithms": [], "slot_algorithm_bind": {}})
+        # 保存算法绑定
+        algo_data = load_json("algorithm_config.json", {"algorithms": [], "slot_algorithm_bind": {}})
         algo_data.setdefault("slot_algorithm_bind", {})[slot_id] = {
             "algo_id": "bytedance_ps" if "字节" in model else "item_cf",
             "algo_weight": algo_weight,
-            "ab_test": {"enabled": ab_enabled, "group_a_ratio": group_a if ab_enabled else 100,
-                        "group_a_algo": "item_cf", "group_b_algo": "bytedance_ps"}
+            "ab_test": {
+                "enabled": ab_enabled,
+                "group_a_ratio": group_a if ab_enabled else 100,
+                "group_a_algo": "item_cf",
+                "group_b_algo": "bytedance_ps",
+            },
         }
-        save_json(os.path.join(CONFIG_DIR, "algorithm_config.json"), algo_data)
-        st.success("策略已发布！")
+        save_json("algorithm_config.json", algo_data)
+        st.success(f"✅ 策略已发布！坑位：{slot_id} ｜ 模型：{model} ｜ 权重：{manual_weight} vs {algo_weight}")
 
-st.markdown('<p class="footer-note">数据源: 外部坑位系统 ｜ 配置存储: recommendation-demo/configs ｜ 今日: 2026-09-21</p>',
-            unsafe_allow_html=True)
+st.markdown(
+    '<p class="footer-note">数据源: 外部坑位系统 ｜ 配置目录: recommendation-demo/configs ｜ 今日: 2026-09-21</p>',
+    unsafe_allow_html=True,
+)
