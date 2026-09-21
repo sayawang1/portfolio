@@ -3,69 +3,22 @@ import streamlit as st
 import os
 import sys
 import json
+import numpy as np
+import pandas as pd
 
 sys.path.append(
     os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "recommendation-demo")
 )
 
-# ---------- 数据生成（不依赖外部，直接内置） ----------
-import numpy as np
-import pandas as pd
+from data_providers.slot_provider import get_slots_with_source
+from data_providers.product_provider import get_products_with_source
+from data_providers.user_provider import get_users_with_source
+from data_providers.interaction_provider import get_interactions_with_source
 
-
-@st.cache_data
-def generate_products(n=60):
-    np.random.seed(42)
-    categories = ["基金", "保险", "存款", "理财", "信用卡", "贷款"]
-    risk_map = {
-        "基金": (3, 5), "保险": (1, 3), "存款": (1, 1),
-        "理财": (2, 4), "信用卡": (1, 3), "贷款": (2, 4),
-    }
-    rows = []
-    for i in range(n):
-        cat = np.random.choice(categories)
-        r_min, r_max = risk_map[cat]
-        rows.append({
-            "product_id": f"P{i+1:03d}",
-            "name": f"{cat}产品{i+1}号",
-            "category": cat,
-            "risk_level": np.random.randint(r_min, r_max + 1),
-            "expected_return": round(0.02 + np.random.uniform(0, 0.08), 4),
-            "popularity": np.random.randint(10, 1000),
-            "status": np.random.choice(["在售", "在售", "在售", "下架"], p=[0.7, 0.1, 0.1, 0.1]),
-        })
-    return pd.DataFrame(rows)
-
-
-@st.cache_data
-def generate_users(n=100):
-    np.random.seed(42)
-    rows = []
-    for i in range(n):
-        rows.append({
-            "user_id": f"u{i+1:03d}",
-            "is_vip": np.random.choice([0, 1], p=[0.8, 0.2]),
-            "aum_level": np.random.choice(["低", "中", "高"], p=[0.6, 0.3, 0.1]),
-            "city_tier": np.random.choice(["一线", "二线", "三线"], p=[0.3, 0.4, 0.3]),
-            "age_group": np.random.choice(["18-30", "31-45", "46-60"], p=[0.3, 0.5, 0.2]),
-            "risk_tolerance": np.random.randint(1, 6),
-        })
-    return pd.DataFrame(rows)
-
-
-@st.cache_data
-def generate_interactions(users, products, n_per_user=6):
-    np.random.seed(42)
-    rows = []
-    for uid in users["user_id"]:
-        sample = np.random.choice(products["product_id"], n_per_user, replace=False)
-        for pid in sample:
-            rows.append({
-                "user_id": uid,
-                "product_id": pid,
-                "rating": np.random.randint(1, 6),
-            })
-    return pd.DataFrame(rows)
+CONFIG_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "recommendation-demo", "configs",
+)
 
 
 def build_item_similarity(interactions):
@@ -119,8 +72,12 @@ def recommend_by_algorithm(user_id, algo_type, interactions, item_sim, products,
         return products[products["status"] == "在售"].nlargest(top_n, "popularity")
 
 
-# ---------- 页面 ----------
-st.set_page_config(page_title="推荐系统 Demo", page_icon="🛒", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(
+    page_title="推荐系统 Demo",
+    page_icon="🛒",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
 
 st.markdown("""
 <style>
@@ -150,24 +107,26 @@ st.markdown("""
 
 st.markdown("# 📈 推荐系统 · 选品 & 效果预览")
 
-# 按钮组
-slot_map = {
-    "🎯 首页Banner": "app_home_banner",
-    "📋 首页信息流": "app_home_feed",
-    "🌐 网页侧边栏": "web_sidebar",
-    "🧪 AB-A组": "app_home_feed",
-    "🧪 AB-B组": "app_home_feed",
-}
+# ---------- 从 provider 拿坑位 ----------
+slot_list, slot_source = get_slots_with_source()
+slot_map = {}
+for s in slot_list:
+    label = f"🎯 {s['slot_name']}"
+    slot_map[label] = s["slot_id"]
+
+if not slot_map:
+    slot_map = {"📋 首页信息流": "app_home_feed"}
+
 btn_cols = st.columns(len(slot_map))
-if "selected_slot" not in st.session_state:
-    st.session_state.selected_slot = "📋 首页信息流"
+if "selected_slot_label" not in st.session_state:
+    st.session_state.selected_slot_label = list(slot_map.keys())[0]
 
 for i, label in enumerate(slot_map.keys()):
     with btn_cols[i]:
         if st.button(label, use_container_width=True, key=f"slot_btn_{i}"):
-            st.session_state.selected_slot = label
+            st.session_state.selected_slot_label = label
 
-slot_id = slot_map[st.session_state.selected_slot]
+slot_id = slot_map[st.session_state.selected_slot_label]
 
 c_left, c_right = st.columns([1, 3])
 with c_left:
@@ -175,18 +134,17 @@ with c_left:
     run = st.button("🚀 开始推荐", use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-# 数据
-products = generate_products()
-users = generate_users()
-interactions = generate_interactions(users, products)
+# ---------- 从 provider 拿数据 ----------
+products, product_source = get_products_with_source()
+users, user_source = get_users_with_source()
+interactions, interaction_source = get_interactions_with_source(users, products)
 item_sim = build_item_similarity(interactions)
 
-# 读取配置，决定算法
-CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "recommendation-demo", "configs")
-algo_path = os.path.join(CONFIG_DIR, "algorithm_config.json")
+# ---------- 读取算法配置 ----------
 algo_id = "bytedance_ps"
 algo_weight = 65
 ab_info = "未开启"
+algo_path = os.path.join(CONFIG_DIR, "algorithm_config.json")
 if os.path.exists(algo_path):
     try:
         with open(algo_path, "r", encoding="utf-8") as f:
@@ -227,6 +185,6 @@ else:
     st.warning("暂无推荐结果，请先到运营后台发布策略。")
 
 st.markdown(
-    '<p class="footer-note">数据源: 模拟数据 ｜ 策略: 人工 > 算法 > 兜底 ｜ 今日: 2026-09-21</p>',
+    f'<p class="footer-note">数据源: 商品={product_source} ｜ 用户={user_source} ｜ 行为={interaction_source} ｜ 坑位={slot_source} ｜ 今日: 2026-09-21</p>',
     unsafe_allow_html=True,
 )
