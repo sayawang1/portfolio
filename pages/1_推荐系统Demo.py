@@ -6,26 +6,22 @@ import json
 import numpy as np
 import pandas as pd
 
-sys.path.append(
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "recommendation-demo")
-)
+# ---------- 关键修正：把 recommendation-demo 也加入 sys.path ----------
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(BASE_DIR)
+sys.path.append(os.path.join(BASE_DIR, "recommendation-demo"))
 
 from data_providers.slot_provider import get_slots_with_source
 from data_providers.product_provider import get_products_with_source
 from data_providers.user_provider import get_users_with_source
 from data_providers.interaction_provider import get_interactions_with_source
 
-CONFIG_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "recommendation-demo", "configs",
-)
+CONFIG_DIR = os.path.join(BASE_DIR, "recommendation-demo", "configs")
 
 
 def build_item_similarity(interactions):
     from sklearn.metrics.pairwise import cosine_similarity
-    matrix = interactions.pivot_table(
-        index="user_id", columns="product_id", values="rating", fill_value=0
-    )
+    matrix = interactions.pivot_table(index="user_id", columns="product_id", values="rating", fill_value=0)
     sim = cosine_similarity(matrix.T)
     return pd.DataFrame(sim, index=matrix.columns, columns=matrix.columns)
 
@@ -52,8 +48,7 @@ def recommend_by_algorithm(user_id, algo_type, interactions, item_sim, products,
             (interactions["user_id"] == user_id) & (interactions["rating"] >= 4)
         ].merge(products[["product_id", "category"]], on="product_id")["category"].unique()
         return products[
-            (products["category"].isin(liked_cats))
-            & (~products["product_id"].isin(user_rated))
+            (products["category"].isin(liked_cats)) & (~products["product_id"].isin(user_rated))
             & (products["status"] == "在售")
         ].nlargest(top_n, "popularity")
     elif algo_type == "bytedance_ps":
@@ -72,12 +67,7 @@ def recommend_by_algorithm(user_id, algo_type, interactions, item_sim, products,
         return products[products["status"] == "在售"].nlargest(top_n, "popularity")
 
 
-st.set_page_config(
-    page_title="推荐系统 Demo",
-    page_icon="🛒",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
+st.set_page_config(page_title="推荐系统 Demo", page_icon="🛒", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
 <style>
@@ -107,7 +97,6 @@ st.markdown("""
 
 st.markdown("# 📈 推荐系统 · 选品 & 效果预览")
 
-# ---------- 从 provider 拿坑位 ----------
 slot_list, slot_source = get_slots_with_source()
 slot_map = {}
 for s in slot_list:
@@ -134,13 +123,11 @@ with c_left:
     run = st.button("🚀 开始推荐", use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-# ---------- 从 provider 拿数据 ----------
 products, product_source = get_products_with_source()
 users, user_source = get_users_with_source()
 interactions, interaction_source = get_interactions_with_source(users, products)
 item_sim = build_item_similarity(interactions)
 
-# ---------- 读取算法配置 ----------
 algo_id = "bytedance_ps"
 algo_weight = 65
 ab_info = "未开启"
