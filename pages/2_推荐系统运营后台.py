@@ -38,8 +38,7 @@ st.markdown("""
     .stApp { background-color: #0B0E11; color: #E6E6E6; }
     h1, h2, h3, h4, h5 { color: #FFFFFF !important; }
     label, .stMarkdown, p { color: #E6E6E6 !important; }
-    .stTextInput input, .stNumberInput input, .stTextArea textarea,
-    .stDateInput input {
+    .stTextInput input, .stNumberInput input, .stTextArea textarea, .stDateInput input {
         background-color: #FFFFFF !important; color: #000000 !important;
         border: 1px solid #CCCCCC !important; border-radius: 6px !important;
     }
@@ -68,10 +67,6 @@ st.markdown("""
         border-radius: 10px; font-size: 12px;
     }
     .footer-note { color: #6B7280; font-size: 12px; }
-    .strategy-row {
-        background-color: #151A1F; border: 1px solid #232A31;
-        border-radius: 8px; padding: 10px; margin-bottom: 8px;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -87,16 +82,15 @@ ADV_OPTIONS = ["冷启动: 新用户走热门", "频控: 每用户日 3 次", "�
 slot_list, slot_source = get_slots_with_source()
 slot_options = [s["slot_id"] for s in slot_list]
 
-# ========== 顶部：策略列表（增删改） ==========
+# ========== 顶部：策略列表 ==========
 st.markdown("### 📋 已发布策略列表")
 manual_data = load_json("manual_config.json", {"manual_rules": []})
-algo_data = load_json("algorithm_config.json", {"algorithms": [], "slot_algorithm_bind": {}})
-
 rules = manual_data.get("manual_rules", [])
+
 if rules:
     for idx, rule in enumerate(rules):
-        with st.container():
-            c1, c2, c3, c4, c5 = st.columns([2, 3, 1.5, 1.5, 1.5])
+        with st.container(border=True):
+            c1, c2, c3, c4, c5, c6 = st.columns([1.5, 2.5, 1.3, 1.3, 1.3, 1.2])
             with c1:
                 st.markdown(f"**{rule['rule_id']}**")
             with c2:
@@ -106,12 +100,13 @@ if rules:
             with c4:
                 st.markdown(f"分流: {rule.get('traffic_pct', '-')}%")
             with c5:
+                st.markdown(f"客群: {rule.get('audience_label', '-')}")
+            with c6:
                 if st.button("🗑️ 删除", key=f"del_{idx}"):
                     rules.pop(idx)
                     manual_data["manual_rules"] = rules
                     save_json("manual_config.json", manual_data)
                     st.rerun()
-        st.markdown('<div class="strategy-row"></div>', unsafe_allow_html=True)
 else:
     st.info("暂无已发布策略。")
 
@@ -126,7 +121,6 @@ with col_left:
         slot_id = st.selectbox("位置选择", slot_options, index=0, key="base_slot")
         time_window = st.selectbox("生效时间", TIME_OPTIONS, index=0, key="base_time")
 
-        # 自定义时间段 → 显示日期选择器
         custom_start, custom_end = None, None
         if time_window == "自定义时间段":
             d1, d2 = st.columns(2)
@@ -184,7 +178,6 @@ with c_draft:
         st.info("草稿已保存（演示）")
 with c_publish:
     if st.button("发布策略", use_container_width=True):
-        # 时间段处理
         if time_window == "自定义时间段" and custom_start and custom_end:
             start_str = f"{custom_start.strftime('%Y-%m-%d')} 00:00:00"
             end_str = f"{custom_end.strftime('%Y-%m-%d')} 23:59:59"
@@ -193,17 +186,32 @@ with c_publish:
         else:
             start_str, end_str = "2026-09-01 00:00:00", "2026-09-30 23:59:59"
 
+        # 客群 → 条件映射
+        if "VIP" in manual_audience:
+            target_type, target_condition = "tag", "is_vip == 1"
+        elif manual_audience == "新用户":
+            target_type, target_condition = "tag", "is_new == 1"
+        elif manual_audience == "高净值客户":
+            target_type, target_condition = "tag", "aum_level == '高'"
+        elif manual_audience == "活跃用户":
+            target_type, target_condition = "tag", "is_active == 1"
+        else:
+            target_type, target_condition = "all", ""
+
         manual_data = load_json("manual_config.json", {"manual_rules": []})
         manual_data["manual_rules"].append({
             "rule_id": f"rule_{uuid.uuid4().hex[:6]}",
             "slot_id": slot_id,
             "position_id": "p1",
             "enabled": True,
-            "target_type": "tag" if "VIP" in manual_audience else "all",
-            "target_condition": "is_vip == 1" if "VIP" in manual_audience else "",
+            "target_type": target_type,
+            "target_condition": target_condition,
+            "audience_label": manual_audience,
             "items": ["P001", "P002", "P003"],
             "traffic_pct": 100,
             "manual_weight": manual_weight,
+            "icon": icon_file,
+            "jump_url": jump_url,
             "start_time": start_str,
             "end_time": end_str,
             "is_fallback": is_fallback,
@@ -230,3 +238,4 @@ st.markdown(
     f'<p class="footer-note">数据源: 外部坑位系统（{slot_source}） ｜ 配置目录: recommendation-demo/configs ｜ 今日: 2026-09-21</p>',
     unsafe_allow_html=True,
 )
+  
