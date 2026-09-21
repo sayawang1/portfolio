@@ -6,18 +6,7 @@ import pandas as pd
 EXTERNAL_USER_API = os.getenv("USER_API_URL", "")
 
 
-def get_users():
-    if EXTERNAL_USER_API:
-        try:
-            import requests
-            resp = requests.get(EXTERNAL_USER_API, timeout=3)
-            if resp.status_code == 200:
-                df = pd.DataFrame(resp.json())
-                if not df.empty:
-                    return df
-        except Exception:
-            pass
-
+def _local_users():
     np.random.seed(42)
     rows = []
     for i in range(100):
@@ -30,3 +19,24 @@ def get_users():
             "risk_tolerance": int(np.random.randint(1, 6)),
         })
     return pd.DataFrame(rows)
+
+
+def get_users_with_source():
+    """返回 (df, source)"""
+    if EXTERNAL_USER_API:
+        try:
+            import requests
+            resp = requests.get(EXTERNAL_USER_API, timeout=3)
+            if resp.status_code == 200:
+                df = pd.DataFrame(resp.json())
+                if not df.empty:
+                    return df, "external"
+        except Exception:
+            pass
+    return _local_users(), "local"
+
+
+def get_users():
+    """只返回 DataFrame"""
+    df, _ = get_users_with_source()
+    return df
