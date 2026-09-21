@@ -119,6 +119,7 @@ def get_manual_result(slot_id, user, products):
             return {
                 "source": "manual",
                 "strategy_name": rule.get("remark", "人工强干预"),
+                "strategy_id": rule.get("rule_id", "-"),
                 "weight": rule.get("manual_weight", 80),
                 "items": matched,
                 "icon": rule.get("icon", ""),
@@ -163,6 +164,7 @@ def get_algorithm_result(slot_id, user, interactions, item_sim, products):
         return {
             "source": "algorithm",
             "strategy_name": f"算法推荐（{algo_id}）",
+            "strategy_id": f"algo_{algo_id}",
             "weight": algo_weight,
             "items": items,
             "ab_group": ab_group,
@@ -194,6 +196,7 @@ def get_fallback_result(slot_id, user, products, interactions, item_sim):
                     return {
                         "source": "fallback_manual",
                         "strategy_name": "人工兜底",
+                        "strategy_id": rule.get("rule_id", "-"),
                         "weight": rule.get("manual_weight", 0),
                         "items": matched,
                         "icon": rule.get("icon", ""),
@@ -206,6 +209,7 @@ def get_fallback_result(slot_id, user, products, interactions, item_sim):
     return {
         "source": "fallback_algorithm",
         "strategy_name": "全量兜底（热门）",
+        "strategy_id": "algo_popularity",
         "weight": 0,
         "items": items,
     }
@@ -217,7 +221,6 @@ def execute_strategy(slot_id, user, interactions, item_sim, products):
     algo = get_algorithm_result(slot_id, user, interactions, item_sim, products)
 
     if manual and algo:
-        # 权重竞争公式：人工权重×100 + 算法权重
         manual_score = manual["weight"] * 100 + algo["weight"]
         algo_score = algo["weight"] * 100 + manual["weight"]
         if manual_score >= algo_score:
@@ -252,8 +255,8 @@ st.markdown("""
     }
     .stButton>button:hover { border-color: #FF4B4B; color: #FF4B4B; }
     .cond-badge {
-        display: inline-block; padding: 4px 12px; margin: 4px 6px 4px 0;
-        background-color: #1F2937; color: #9CA3AF;
+        display: inline-block; padding: 6px 14px; margin: 4px 6px 4px 0;
+        background-color: #1F2937; color: #E6E6E6;
         border-radius: 12px; font-size: 13px;
     }
     .rec-card {
@@ -268,29 +271,33 @@ st.markdown("""
     }
     .final-card h3 { margin: 0 0 8px 0; color: #FF4B4B; }
     .footer-note { color: #4B5563; font-size: 12px; }
-    .user-selector { background-color: #151A1F; border-radius: 10px; padding: 12px; margin-bottom: 16px; }
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown("# 📈 推荐系统 · 选品 & 效果预览")
+
+# 清缓存按钮
+if st.button("🔄 清除缓存并刷新", key="clear_cache_btn"):
+    st.cache_data.clear()
+    st.cache_resource.clear()
+    st.rerun()
 
 users_all, user_source = get_users_with_source()
 products_all, product_source = get_products_with_source()
 interactions_all, interaction_source = get_interactions_with_source(users_all, products_all)
 item_sim_all = build_item_similarity(interactions_all)
 
-with st.container():
-    st.markdown('<div class="user-selector">', unsafe_allow_html=True)
-    c_u1, c_u2, c_u3 = st.columns([2, 3, 3])
-    with c_u1:
-        selected_user_id = st.selectbox("👤 选择用户", users_all["user_id"].tolist(), index=0)
-    user_row = users_all[users_all["user_id"] == selected_user_id].iloc[0]
-    with c_u2:
-        st.markdown(f"**VIP**：{'✅ 是' if user_row['is_vip'] == 1 else '❌ 否'} ｜ **资产等级**：{user_row['aum_level']}")
-    with c_u3:
-        st.markdown(f"**城市**：{user_row['city_tier']} ｜ **风险承受**：R{user_row['risk_tolerance']}")
-    st.markdown('</div>', unsafe_allow_html=True)
+# 用户选择器（无空行）
+c_u1, c_u2, c_u3 = st.columns([2, 3, 3])
+with c_u1:
+    selected_user_id = st.selectbox("👤 选择用户", users_all["user_id"].tolist(), index=0)
+user_row = users_all[users_all["user_id"] == selected_user_id].iloc[0]
+with c_u2:
+    st.markdown(f"**VIP**：{'✅ 是' if user_row['is_vip'] == 1 else '❌ 否'} ｜ **资产等级**：{user_row['aum_level']}")
+with c_u3:
+    st.markdown(f"**城市**：{user_row['city_tier']} ｜ **风险承受**：R{user_row['risk_tolerance']}")
 
+# 坑位选择
 slot_list, slot_source = get_slots_with_source()
 slot_map = {}
 for s in slot_list:
@@ -311,14 +318,13 @@ for i, label in enumerate(slot_map.keys()):
 
 slot_id = slot_map[st.session_state.selected_slot_label]
 
+# 执行策略
 result = execute_strategy(slot_id, user_row, interactions_all, item_sim_all, products_all)
 
+# 只显示：策略来源 + 命中策略ID（不要权重、竞争）
 st.markdown(
-    f'<span class="cond-badge">坑位: {slot_id}</span>'
-    f'<span class="cond-badge">策略: {result["strategy_name"]}</span>'
-    f'<span class="cond-badge">权重: {result["weight"]}</span>'
-    f'<span class="cond-badge">竞争: {result.get("competition", "-")}</span>'
-    + (f'<span class="cond-badge">AB组: {result.get("ab_group", "-")}</span>' if result.get("ab_group") and result.get("ab_group") != "-" else ""),
+    f'<span class="cond-badge">策略来源: {result["source"]}</span>'
+    f'<span class="cond-badge">命中策略: {result.get("strategy_id", "-")}</span>',
     unsafe_allow_html=True,
 )
 
@@ -327,8 +333,6 @@ if result["source"] in ("manual", "fallback_manual"):
         st.markdown(f"**图标**：`{result['icon']}`")
     if result.get("jump_url"):
         st.markdown(f"**跳转链接**：[{result['jump_url']}]({result['jump_url']})")
-    if result.get("audience"):
-        st.markdown(f"**命中客群**：{result['audience']}")
 
 st.markdown("---")
 
@@ -355,7 +359,7 @@ if items is not None and len(items) > 0:
         </div>
         """, unsafe_allow_html=True)
 else:
-    st.warning("暂无推荐结果，请先到运营后台发布策略。")
+    st.warning("该坑位暂未配置策略，请在运营后台配置后查看效果。")
 
 st.markdown(
     f'<p class="footer-note">数据源: 商品={product_source} ｜ 用户={user_source} ｜ 行为={interaction_source} ｜ 坑位={slot_source} ｜ 今日: 2026-09-21</p>',
