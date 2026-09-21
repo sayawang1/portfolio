@@ -4,17 +4,14 @@ import os
 import sys
 import json
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.append(
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "recommendation-demo")
-)
+# ---------- 关键修正：把 recommendation-demo 也加入 sys.path ----------
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(BASE_DIR)
+sys.path.append(os.path.join(BASE_DIR, "recommendation-demo"))
 
 from data_providers.slot_provider import get_slots_with_source
 
-CONFIG_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "recommendation-demo", "configs",
-)
+CONFIG_DIR = os.path.join(BASE_DIR, "recommendation-demo", "configs")
 os.makedirs(CONFIG_DIR, exist_ok=True)
 
 
@@ -47,43 +44,27 @@ st.markdown("""
     .stApp { background-color: #0B0E11; color: #E6E6E6; }
     h1, h2, h3, h4, h5 { color: #FFFFFF !important; }
     label, .stMarkdown, p { color: #E6E6E6 !important; }
-
-    /* 输入框白底黑字 */
-    .stTextInput input,
-    .stNumberInput input,
-    .stTextArea textarea {
-        background-color: #FFFFFF !important;
-        color: #000000 !important;
-        border: 1px solid #CCCCCC !important;
-        border-radius: 6px !important;
+    .stTextInput input, .stNumberInput input, .stTextArea textarea {
+        background-color: #FFFFFF !important; color: #000000 !important;
+        border: 1px solid #CCCCCC !important; border-radius: 6px !important;
     }
     div[data-baseweb="select"] > div {
-        background-color: #FFFFFF !important;
-        color: #000000 !important;
+        background-color: #FFFFFF !important; color: #000000 !important;
         border: 1px solid #CCCCCC !important;
     }
-    div[data-baseweb="select"] span,
-    div[data-baseweb="select"] div {
-        color: #000000 !important;
-    }
-    div[data-baseweb="popover"] div,
-    ul[role="listbox"] li {
-        background-color: #FFFFFF !important;
-        color: #000000 !important;
+    div[data-baseweb="select"] span, div[data-baseweb="select"] div { color: #000000 !important; }
+    div[data-baseweb="popover"] div, ul[role="listbox"] li {
+        background-color: #FFFFFF !important; color: #000000 !important;
     }
     ul[role="listbox"] li:hover { background-color: #F0F0F0 !important; }
     .stSlider [data-baseweb="slider"] div { color: #000000 !important; }
-
     div[data-testid="stVerticalBlockBorderWrapper"] {
-        background-color: #151A1F;
-        border: 1px solid #232A31;
-        border-radius: 10px;
-        padding: 14px;
+        background-color: #151A1F; border: 1px solid #232A31;
+        border-radius: 10px; padding: 14px;
     }
     .stButton>button {
         background-color: #FF4B4B; color: #FFFFFF;
-        border: none; border-radius: 8px;
-        padding: 8px 20px; font-weight: 600;
+        border: none; border-radius: 8px; padding: 8px 20px; font-weight: 600;
     }
     .stButton>button:hover { background-color: #E03E3E; }
     .badge {
@@ -98,38 +79,16 @@ st.markdown("""
 st.title("🎛️ 推荐系统运营后台")
 st.caption("按图1原型：基础配置 / 算法策略 / 人工策略")
 
-# ---------- 常量字典 ----------
-TIME_OPTIONS = [
-    "2026 Q3 大促周期 (9/1-9/30)",
-    "长期有效",
-    "2026 双十一周期 (11/1-11/11)",
-    "自定义时间段",
-]
+TIME_OPTIONS = ["2026 Q3 大促周期 (9/1-9/30)", "长期有效", "2026 双十一周期 (11/1-11/11)", "自定义时间段"]
+AUDIENCE_OPTIONS = ["全量用户", "精准·VIP会员", "新用户", "高净值客户", "活跃用户", "流失预警用户"]
+MODEL_OPTIONS = ["DeepFM v3（精排）", "双塔召回（DSSM）", "字节千人千面", "协同过滤 ItemCF", "内容召回 ContentBased", "热门兜底 Popularity"]
+CONDITION_OPTIONS = ["设备: iOS/Android", "地域: 上海/杭州", "时段: 10:00-22:00", "用户: 已登录"]
+ADV_OPTIONS = ["冷启动: 新用户走热门", "频控: 每用户日 3 次", "去重: 排除已点击"]
 
-AUDIENCE_OPTIONS = [
-    "全量用户", "精准·VIP会员", "新用户", "高净值客户", "活跃用户", "流失预警用户",
-]
-
-MODEL_OPTIONS = [
-    "DeepFM v3（精排）", "双塔召回（DSSM）", "字节千人千面",
-    "协同过滤 ItemCF", "内容召回 ContentBased", "热门兜底 Popularity",
-]
-
-CONDITION_OPTIONS = [
-    "设备: iOS/Android", "地域: 上海/杭州", "时段: 10:00-22:00", "用户: 已登录",
-]
-
-ADV_OPTIONS = [
-    "冷启动: 新用户走热门", "频控: 每用户日 3 次", "去重: 排除已点击",
-]
-
-# ---------- 从 provider 拿坑位 ----------
 slot_list, slot_source = get_slots_with_source()
 slot_options = [s["slot_id"] for s in slot_list]
 
-# ---------- 第一行：基础配置 + 算法策略 ----------
 col_left, col_right = st.columns(2)
-
 with col_left:
     st.markdown("### 基础配置")
     with st.container(border=True):
@@ -154,8 +113,6 @@ with col_right:
             st.text_input("rank_num", value="20")
 
 st.divider()
-
-# ---------- 第二行：人工策略 ----------
 st.markdown("### 人工策略")
 with st.container(border=True):
     c1, c2 = st.columns(2)
@@ -170,15 +127,12 @@ with st.container(border=True):
         selected_conds = st.multiselect("已选条件", CONDITION_OPTIONS, default=CONDITION_OPTIONS)
         badges_html = "".join([f'<span class="badge">{c}</span>' for c in selected_conds])
         st.markdown(badges_html, unsafe_allow_html=True)
-
         st.markdown("**高级设置**")
         selected_adv = st.multiselect("已选高级设置", ADV_OPTIONS, default=ADV_OPTIONS)
         adv_html = "".join([f'<span class="badge">{a}</span>' for a in selected_adv])
         st.markdown(adv_html, unsafe_allow_html=True)
 
 st.divider()
-
-# ---------- 底部操作 ----------
 c_cancel, c_draft, c_publish = st.columns([6, 2, 2])
 with c_draft:
     if st.button("保存草稿", use_container_width=True):
@@ -188,36 +142,23 @@ with c_publish:
         manual_data = load_json("manual_config.json", {"manual_rules": []})
         manual_data["manual_rules"].append({
             "rule_id": f"rule_{len(manual_data['manual_rules']) + 1:03d}",
-            "slot_id": slot_id,
-            "position_id": "p1",
-            "enabled": True,
+            "slot_id": slot_id, "position_id": "p1", "enabled": True,
             "target_type": "tag" if "VIP" in manual_audience else "all",
             "target_condition": "is_vip == 1" if "VIP" in manual_audience else "",
-            "items": ["P001", "P002", "P003"],
-            "traffic_pct": 100,
+            "items": ["P001", "P002", "P003"], "traffic_pct": 100,
             "manual_weight": manual_weight,
-            "start_time": "2025-01-01 00:00:00",
-            "end_time": "2030-12-31 23:59:59",
-            "is_fallback": is_fallback,
-            "remark": f"{manual_audience} 人工强推",
+            "start_time": "2025-01-01 00:00:00", "end_time": "2030-12-31 23:59:59",
+            "is_fallback": is_fallback, "remark": f"{manual_audience} 人工强推",
         })
         save_json("manual_config.json", manual_data)
-
         algo_data = load_json("algorithm_config.json", {"algorithms": [], "slot_algorithm_bind": {}})
         algo_data.setdefault("slot_algorithm_bind", {})[slot_id] = {
             "algo_id": "bytedance_ps" if "字节" in model else "item_cf",
             "algo_weight": algo_weight,
-            "ab_test": {
-                "enabled": ab_enabled,
-                "group_a_ratio": group_a if ab_enabled else 100,
-                "group_a_algo": "item_cf",
-                "group_b_algo": "bytedance_ps",
-            },
+            "ab_test": {"enabled": ab_enabled, "group_a_ratio": group_a if ab_enabled else 100,
+                        "group_a_algo": "item_cf", "group_b_algo": "bytedance_ps"},
         }
         save_json("algorithm_config.json", algo_data)
         st.success(f"✅ 策略已发布！坑位：{slot_id} ｜ 模型：{model} ｜ 权重：{manual_weight} vs {algo_weight}")
 
-st.markdown(
-    f'<p class="footer-note">数据源: 外部坑位系统（{slot_source}） ｜ 配置目录: recommendation-demo/configs ｜ 今日: 2026-09-21</p>',
-    unsafe_allow_html=True,
-)
+st.markdown(f'<p class="footer-note">数据源: 外部坑位系统（{slot_source}） ｜ 配置目录: recommendation-demo/configs ｜ 今日: 2026-09-21</p>', unsafe_allow_html=True)
