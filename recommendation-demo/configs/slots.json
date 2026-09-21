@@ -1,7 +1,0 @@
-{
-  "slots": [
-    {"slot_id": "app_home_banner", "slot_name": "APP首页Banner", "platform": "app", "enabled": true},
-    {"slot_id": "app_home_feed",   "slot_name": "APP首页信息流", "platform": "app", "enabled": true},
-    {"slot_id": "web_sidebar",     "slot_name": "网页侧边栏",   "platform": "web", "enabled": true}
-  ]
-}
