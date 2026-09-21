@@ -17,7 +17,6 @@ CONFIG_DIR = os.path.join(
 )
 
 
-# ---------- 算法 ----------
 def build_item_similarity(interactions):
     from sklearn.metrics.pairwise import cosine_similarity
     matrix = interactions.pivot_table(index="user_id", columns="product_id", values="rating", fill_value=0)
@@ -66,7 +65,6 @@ def recommend_by_algorithm(user_id, algo_type, interactions, item_sim, products,
         return products[products["status"] == "在售"].nlargest(top_n, "popularity")
 
 
-# ---------- 策略引擎（含权重竞争） ----------
 def _match_target(user, target_type, condition):
     if target_type == "all" or not condition:
         return True
@@ -115,6 +113,8 @@ def get_manual_result(slot_id, user, products):
                 "strategy_name": rule.get("remark", "人工强干预"),
                 "weight": rule.get("manual_weight", 80),
                 "items": matched,
+                "icon": rule.get("icon", ""),
+                "jump_url": rule.get("jump_url", ""),
             }
     return None
 
@@ -161,7 +161,6 @@ def execute_strategy(slot_id, user, interactions, item_sim, products):
     algo = get_algorithm_result(slot_id, user, interactions, item_sim, products)
 
     if manual and algo:
-        # 权重竞争
         if manual["weight"] >= algo["weight"]:
             manual["competition"] = f"人工 {manual['weight']} vs 算法 {algo['weight']} → 人工胜出"
             return manual
@@ -180,7 +179,6 @@ def execute_strategy(slot_id, user, interactions, item_sim, products):
         return fallback
 
 
-# ---------- 页面 ----------
 st.set_page_config(page_title="推荐系统 Demo", page_icon="🛒", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
@@ -193,7 +191,6 @@ st.markdown("""
         padding: 10px 18px; font-weight: 500;
     }
     .stButton>button:hover { border-color: #FF4B4B; color: #FF4B4B; }
-    .primary-btn button { background-color: #FF4B4B !important; color: white !important; border: none !important; }
     .cond-badge {
         display: inline-block; padding: 4px 12px; margin: 4px 6px 4px 0;
         background-color: #1F2937; color: #9CA3AF;
@@ -256,30 +253,28 @@ for i, label in enumerate(slot_map.keys()):
 
 slot_id = slot_map[st.session_state.selected_slot_label]
 
-c_left, c_right = st.columns([1, 3])
-with c_left:
-    st.markdown('<div class="primary-btn">', unsafe_allow_html=True)
-    st.button("🚀 开始推荐", use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
 # ---------- 策略执行 ----------
 result = execute_strategy(slot_id, user_row, interactions_all, item_sim_all, products_all)
 
-with c_right:
-    st.markdown(
-        f'<span class="cond-badge">坑位: {slot_id}</span>'
-        f'<span class="cond-badge">策略: {result["strategy_name"]}</span>'
-        f'<span class="cond-badge">权重: {result["weight"]}</span>'
-        f'<span class="cond-badge">竞争: {result.get("competition", "-")}</span>',
-        unsafe_allow_html=True,
-    )
+st.markdown(
+    f'<span class="cond-badge">坑位: {slot_id}</span>'
+    f'<span class="cond-badge">策略: {result["strategy_name"]}</span>'
+    f'<span class="cond-badge">权重: {result["weight"]}</span>'
+    f'<span class="cond-badge">竞争: {result.get("competition", "-")}</span>',
+    unsafe_allow_html=True,
+)
+
+# 人工强干预时展示图标和跳转
+if result["source"] == "manual":
+    if result.get("icon"):
+        st.markdown(f"**图标**：`{result['icon']}`")
+    if result.get("jump_url"):
+        st.markdown(f"**跳转链接**：[{result['jump_url']}]({result['jump_url']})")
 
 st.markdown("---")
 
-# ---------- 最终展示 ----------
 items = result.get("items")
 if items is not None and len(items) > 0:
-    # 判断是否单条展示（Banner 类坑位）
     is_single_slot = "banner" in slot_id.lower() or "banner" in st.session_state.selected_slot_label.lower()
 
     if is_single_slot:
