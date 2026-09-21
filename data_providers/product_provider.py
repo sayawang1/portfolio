@@ -6,23 +6,13 @@ import pandas as pd
 EXTERNAL_PRODUCT_API = os.getenv("PRODUCT_API_URL", "")
 
 
-def get_products():
-    if EXTERNAL_PRODUCT_API:
-        try:
-            import requests
-            resp = requests.get(EXTERNAL_PRODUCT_API, timeout=3)
-            if resp.status_code == 200:
-                df = pd.DataFrame(resp.json())
-                if not df.empty:
-                    return df
-        except Exception:
-            pass
-
-    # 本地模拟
+def _local_products():
     np.random.seed(42)
     categories = ["基金", "保险", "存款", "理财", "信用卡", "贷款"]
-    risk_map = {"基金": (3, 5), "保险": (1, 3), "存款": (1, 1),
-                "理财": (2, 4), "信用卡": (1, 3), "贷款": (2, 4)}
+    risk_map = {
+        "基金": (3, 5), "保险": (1, 3), "存款": (1, 1),
+        "理财": (2, 4), "信用卡": (1, 3), "贷款": (2, 4),
+    }
     rows = []
     for i in range(60):
         cat = np.random.choice(categories)
@@ -37,3 +27,24 @@ def get_products():
             "status": str(np.random.choice(["在售", "在售", "在售", "下架"], p=[0.7, 0.1, 0.1, 0.1])),
         })
     return pd.DataFrame(rows)
+
+
+def get_products_with_source():
+    """返回 (df, source)，source 为 'external' 或 'local'"""
+    if EXTERNAL_PRODUCT_API:
+        try:
+            import requests
+            resp = requests.get(EXTERNAL_PRODUCT_API, timeout=3)
+            if resp.status_code == 200:
+                df = pd.DataFrame(resp.json())
+                if not df.empty:
+                    return df, "external"
+        except Exception:
+            pass
+    return _local_products(), "local"
+
+
+def get_products():
+    """只返回 DataFrame"""
+    df, _ = get_products_with_source()
+    return df
