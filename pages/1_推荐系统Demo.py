@@ -1,22 +1,19 @@
-"""推荐系统 Demo - 深色前端展示（整段复制即可）"""
+"""推荐系统 Demo - 深色前端展示"""
 import streamlit as st
 import os
-import sys
 import json
 import numpy as np
 import pandas as pd
-
-# ---------- 关键修正：把 recommendation-demo 也加入 sys.path ----------
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(BASE_DIR)
-sys.path.append(os.path.join(BASE_DIR, "recommendation-demo"))
 
 from data_providers.slot_provider import get_slots_with_source
 from data_providers.product_provider import get_products_with_source
 from data_providers.user_provider import get_users_with_source
 from data_providers.interaction_provider import get_interactions_with_source
 
-CONFIG_DIR = os.path.join(BASE_DIR, "recommendation-demo", "configs")
+CONFIG_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "recommendation-demo", "configs",
+)
 
 
 def build_item_similarity(interactions):
