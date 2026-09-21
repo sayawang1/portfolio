@@ -12,7 +12,7 @@ def _local_users():
     for i in range(100):
         rows.append({
             "user_id": f"u{i+1:03d}",
-            "is_vip": int(np.random.choice([0, 1], p=[0.8, 0.2])),
+            "is_vip": int(np.random.choice([0, 1], p=[0.5, 0.5])),
             "aum_level": str(np.random.choice(["低", "中", "高"], p=[0.6, 0.3, 0.1])),
             "city_tier": str(np.random.choice(["一线", "二线", "三线"], p=[0.3, 0.4, 0.3])),
             "age_group": str(np.random.choice(["18-30", "31-45", "46-60"], p=[0.3, 0.5, 0.2])),
