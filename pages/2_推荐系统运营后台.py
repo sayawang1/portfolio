@@ -1,17 +1,14 @@
-"""推荐系统运营后台 - 深色 + 白底输入框（整段复制即可）"""
+"""推荐系统运营后台 - 深色 + 白底输入框"""
 import streamlit as st
 import os
-import sys
 import json
-
-# ---------- 关键修正：把 recommendation-demo 也加入 sys.path ----------
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(BASE_DIR)
-sys.path.append(os.path.join(BASE_DIR, "recommendation-demo"))
 
 from data_providers.slot_provider import get_slots_with_source
 
-CONFIG_DIR = os.path.join(BASE_DIR, "recommendation-demo", "configs")
+CONFIG_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "recommendation-demo", "configs",
+)
 os.makedirs(CONFIG_DIR, exist_ok=True)
 
 
@@ -32,12 +29,7 @@ def save_json(filename, data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-st.set_page_config(
-    page_title="推荐系统运营后台",
-    page_icon="🎛️",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
+st.set_page_config(page_title="推荐系统运营后台", page_icon="🎛️", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
 <style>
@@ -89,6 +81,7 @@ slot_list, slot_source = get_slots_with_source()
 slot_options = [s["slot_id"] for s in slot_list]
 
 col_left, col_right = st.columns(2)
+
 with col_left:
     st.markdown("### 基础配置")
     with st.container(border=True):
@@ -151,14 +144,22 @@ with c_publish:
             "is_fallback": is_fallback, "remark": f"{manual_audience} 人工强推",
         })
         save_json("manual_config.json", manual_data)
+
         algo_data = load_json("algorithm_config.json", {"algorithms": [], "slot_algorithm_bind": {}})
         algo_data.setdefault("slot_algorithm_bind", {})[slot_id] = {
             "algo_id": "bytedance_ps" if "字节" in model else "item_cf",
             "algo_weight": algo_weight,
-            "ab_test": {"enabled": ab_enabled, "group_a_ratio": group_a if ab_enabled else 100,
-                        "group_a_algo": "item_cf", "group_b_algo": "bytedance_ps"},
+            "ab_test": {
+                "enabled": ab_enabled,
+                "group_a_ratio": group_a if ab_enabled else 100,
+                "group_a_algo": "item_cf",
+                "group_b_algo": "bytedance_ps",
+            },
         }
         save_json("algorithm_config.json", algo_data)
         st.success(f"✅ 策略已发布！坑位：{slot_id} ｜ 模型：{model} ｜ 权重：{manual_weight} vs {algo_weight}")
 
-st.markdown(f'<p class="footer-note">数据源: 外部坑位系统（{slot_source}） ｜ 配置目录: recommendation-demo/configs ｜ 今日: 2026-09-21</p>', unsafe_allow_html=True)
+st.markdown(
+    f'<p class="footer-note">数据源: 外部坑位系统（{slot_source}） ｜ 配置目录: recommendation-demo/configs ｜ 今日: 2026-09-21</p>',
+    unsafe_allow_html=True,
+)
