@@ -1,59 +1,156 @@
-"""推荐系统 Demo - 照图2风格（深色前端展示）"""
+"""推荐系统 Demo - 深色前端展示（整段复制即可）"""
 import streamlit as st
-import os, sys
+import os
+import sys
+import json
 
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "recommendation-demo"))
+sys.path.append(
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "recommendation-demo")
+)
 
-from data_generator import generate_products, generate_users, generate_interactions
-from recommender import build_item_similarity
-from strategy_engine import execute_strategy
+# ---------- 数据生成（不依赖外部，直接内置） ----------
+import numpy as np
+import pandas as pd
 
+
+@st.cache_data
+def generate_products(n=60):
+    np.random.seed(42)
+    categories = ["基金", "保险", "存款", "理财", "信用卡", "贷款"]
+    risk_map = {
+        "基金": (3, 5), "保险": (1, 3), "存款": (1, 1),
+        "理财": (2, 4), "信用卡": (1, 3), "贷款": (2, 4),
+    }
+    rows = []
+    for i in range(n):
+        cat = np.random.choice(categories)
+        r_min, r_max = risk_map[cat]
+        rows.append({
+            "product_id": f"P{i+1:03d}",
+            "name": f"{cat}产品{i+1}号",
+            "category": cat,
+            "risk_level": np.random.randint(r_min, r_max + 1),
+            "expected_return": round(0.02 + np.random.uniform(0, 0.08), 4),
+            "popularity": np.random.randint(10, 1000),
+            "status": np.random.choice(["在售", "在售", "在售", "下架"], p=[0.7, 0.1, 0.1, 0.1]),
+        })
+    return pd.DataFrame(rows)
+
+
+@st.cache_data
+def generate_users(n=100):
+    np.random.seed(42)
+    rows = []
+    for i in range(n):
+        rows.append({
+            "user_id": f"u{i+1:03d}",
+            "is_vip": np.random.choice([0, 1], p=[0.8, 0.2]),
+            "aum_level": np.random.choice(["低", "中", "高"], p=[0.6, 0.3, 0.1]),
+            "city_tier": np.random.choice(["一线", "二线", "三线"], p=[0.3, 0.4, 0.3]),
+            "age_group": np.random.choice(["18-30", "31-45", "46-60"], p=[0.3, 0.5, 0.2]),
+            "risk_tolerance": np.random.randint(1, 6),
+        })
+    return pd.DataFrame(rows)
+
+
+@st.cache_data
+def generate_interactions(users, products, n_per_user=6):
+    np.random.seed(42)
+    rows = []
+    for uid in users["user_id"]:
+        sample = np.random.choice(products["product_id"], n_per_user, replace=False)
+        for pid in sample:
+            rows.append({
+                "user_id": uid,
+                "product_id": pid,
+                "rating": np.random.randint(1, 6),
+            })
+    return pd.DataFrame(rows)
+
+
+def build_item_similarity(interactions):
+    from sklearn.metrics.pairwise import cosine_similarity
+    matrix = interactions.pivot_table(
+        index="user_id", columns="product_id", values="rating", fill_value=0
+    )
+    sim = cosine_similarity(matrix.T)
+    return pd.DataFrame(sim, index=matrix.columns, columns=matrix.columns)
+
+
+def recommend_by_algorithm(user_id, algo_type, interactions, item_sim, products, top_n=5):
+    if algo_type == "item_cf":
+        user_rated = interactions[interactions["user_id"] == user_id]["product_id"].tolist()
+        if not user_rated:
+            return products[products["status"] == "在售"].nlargest(top_n, "popularity")
+        scores = {}
+        for pid in products["product_id"]:
+            if pid in user_rated or pid not in item_sim.columns:
+                continue
+            sims = [item_sim.loc[pid, r] for r in user_rated if r in item_sim.columns]
+            if sims:
+                scores[pid] = float(np.mean(sorted(sims, reverse=True)[:5]))
+        top = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:top_n]
+        result = products[products["product_id"].isin([t[0] for t in top])].copy()
+        result["score"] = result["product_id"].map(dict(top))
+        return result.sort_values("score", ascending=False)
+    elif algo_type == "content_based":
+        user_rated = interactions[interactions["user_id"] == user_id]["product_id"].tolist()
+        liked_cats = interactions[
+            (interactions["user_id"] == user_id) & (interactions["rating"] >= 4)
+        ].merge(products[["product_id", "category"]], on="product_id")["category"].unique()
+        return products[
+            (products["category"].isin(liked_cats))
+            & (~products["product_id"].isin(user_rated))
+            & (products["status"] == "在售")
+        ].nlargest(top_n, "popularity")
+    elif algo_type == "bytedance_ps":
+        candidates = set()
+        hot = products[products["status"] == "在售"].nlargest(20, "popularity")
+        candidates.update(hot["product_id"].tolist())
+        user_r = interactions[interactions["user_id"] == user_id]
+        if not user_r.empty:
+            liked = user_r.merge(products[["product_id", "category"]], on="product_id", how="left")
+            for cat in liked["category"].dropna().unique():
+                cat_items = products[(products["category"] == cat) & (products["status"] == "在售")].head(10)
+                candidates.update(cat_items["product_id"].tolist())
+        cand_df = products[products["product_id"].isin(candidates)].copy()
+        return cand_df.sort_values("popularity", ascending=False).head(top_n)
+    else:
+        return products[products["status"] == "在售"].nlargest(top_n, "popularity")
+
+
+# ---------- 页面 ----------
 st.set_page_config(page_title="推荐系统 Demo", page_icon="🛒", layout="wide", initial_sidebar_state="collapsed")
 
-# ============ 深色主题 CSS（图2风格） ============
 st.markdown("""
 <style>
     .stApp { background-color: #0B0E11; color: #E6E6E6; }
-    h1, h2, h3 { color: #FFFFFF !important; }
-
-    /* 按钮组 */
+    h1, h2, h3, h4 { color: #FFFFFF !important; }
     .stButton>button {
         background-color: #1C2228; color: #E6E6E6;
         border: 1px solid #2A323A; border-radius: 8px;
         padding: 10px 18px; font-weight: 500;
     }
     .stButton>button:hover { border-color: #FF4B4B; color: #FF4B4B; }
-    .stButton>button:focus:not(:active) { border-color: #FF4B4B; }
-
-    /* 主操作按钮（开始选股） */
-    .primary-btn button {
-        background-color: #FF4B4B !important; color: white !important;
-        border: none !important;
-    }
-
-    /* 启用条件徽章 */
+    .primary-btn button { background-color: #FF4B4B !important; color: white !important; border: none !important; }
     .cond-badge {
         display: inline-block; padding: 4px 12px; margin: 4px 6px 4px 0;
         background-color: #1F2937; color: #9CA3AF;
         border-radius: 12px; font-size: 13px;
     }
-
-    /* 推荐结果卡片 */
     .rec-card {
         background-color: #151A1F; border: 1px solid #232A31;
         border-radius: 10px; padding: 14px; margin-bottom: 10px;
     }
     .rec-card h4 { margin: 0 0 6px 0; color: #FFFFFF; }
     .rec-card .meta { color: #6B7280; font-size: 12px; }
-
     .footer-note { color: #4B5563; font-size: 12px; }
 </style>
 """, unsafe_allow_html=True)
 
-# ============ 标题 ============
 st.markdown("# 📈 推荐系统 · 选品 & 效果预览")
 
-# ============ 按钮组（照图2） ============
+# 按钮组
 slot_map = {
     "🎯 首页Banner": "app_home_banner",
     "📋 首页信息流": "app_home_feed",
@@ -62,57 +159,74 @@ slot_map = {
     "🧪 AB-B组": "app_home_feed",
 }
 btn_cols = st.columns(len(slot_map))
-selected_slot_label = None
-for i, (label, sid) in enumerate(slot_map.items()):
+if "selected_slot" not in st.session_state:
+    st.session_state.selected_slot = "📋 首页信息流"
+
+for i, label in enumerate(slot_map.keys()):
     with btn_cols[i]:
-        if st.button(label, use_container_width=True, key=f"slot_{i}"):
-            selected_slot_label = label
+        if st.button(label, use_container_width=True, key=f"slot_btn_{i}"):
+            st.session_state.selected_slot = label
 
-if not selected_slot_label:
-    selected_slot_label = "📋 首页信息流"
-slot_id = slot_map[selected_slot_label]
+slot_id = slot_map[st.session_state.selected_slot]
 
-# ============ 主操作按钮 ============
 c_left, c_right = st.columns([1, 3])
 with c_left:
     st.markdown('<div class="primary-btn">', unsafe_allow_html=True)
     run = st.button("🚀 开始推荐", use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-# ============ 数据 & 策略 ============
+# 数据
 products = generate_products()
 users = generate_users()
 interactions = generate_interactions(users, products)
 item_sim = build_item_similarity(interactions)
 
-if run or True:
-    user = users.iloc[0]
-    result = execute_strategy(slot_id, "p1", user, interactions, item_sim, products)
+# 读取配置，决定算法
+CONFIG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "recommendation-demo", "configs")
+algo_path = os.path.join(CONFIG_DIR, "algorithm_config.json")
+algo_id = "bytedance_ps"
+algo_weight = 65
+ab_info = "未开启"
+if os.path.exists(algo_path):
+    try:
+        with open(algo_path, "r", encoding="utf-8") as f:
+            algo_data = json.load(f)
+        bind = algo_data.get("slot_algorithm_bind", {}).get(slot_id, {})
+        algo_id = bind.get("algo_id", "bytedance_ps")
+        algo_weight = bind.get("algo_weight", 65)
+        ab = bind.get("ab_test", {})
+        if ab.get("enabled"):
+            ab_info = f"A组 {ab.get('group_a_ratio', 50)}% / B组 {100 - ab.get('group_a_ratio', 50)}%"
+    except Exception:
+        pass
 
-    # 启用条件徽章
-    with c_right:
-        st.markdown(
-            f'<span class="cond-badge">坑位: {slot_id}</span>'
-            f'<span class="cond-badge">策略: {result["strategy_name"]}</span>'
-            f'<span class="cond-badge">来源: {result["source"]}</span>'
-            f'<span class="cond-badge">权重: {result.get("weight", "-")}</span>',
-            unsafe_allow_html=True
-        )
+user = users.iloc[0]
+items = recommend_by_algorithm(user["user_id"], algo_id, interactions, item_sim, products, top_n=5)
 
-    st.markdown("---")
+with c_right:
+    st.markdown(
+        f'<span class="cond-badge">坑位: {slot_id}</span>'
+        f'<span class="cond-badge">算法: {algo_id}</span>'
+        f'<span class="cond-badge">权重: {algo_weight}</span>'
+        f'<span class="cond-badge">AB: {ab_info}</span>',
+        unsafe_allow_html=True,
+    )
 
-    # 推荐结果卡片
-    items = result.get("items")
-    if items is not None and len(items) > 0:
-        for _, row in items.iterrows():
-            st.markdown(f"""
-            <div class="rec-card">
-                <h4>{row.get('name', row['product_id'])}</h4>
-                <div class="meta">类别：{row.get('category', '-')} ｜ 风险：R{row.get('risk_level', '-')} ｜ 热度：{row.get('popularity', '-')}</div>
-            </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.warning("暂无推荐结果")
+st.markdown("---")
+st.markdown("### 📋 推荐结果")
 
-st.markdown('<p class="footer-note">数据源: 模拟数据 ｜ 策略: 人工 > 算法 > 兜底 ｜ 今日: 2026-09-21</p>',
-            unsafe_allow_html=True)
+if items is not None and len(items) > 0:
+    for _, row in items.iterrows():
+        st.markdown(f"""
+        <div class="rec-card">
+            <h4>{row.get('name', row['product_id'])}</h4>
+            <div class="meta">类别：{row.get('category', '-')} ｜ 风险：R{row.get('risk_level', '-')} ｜ 热度：{row.get('popularity', '-')}</div>
+        </div>
+        """, unsafe_allow_html=True)
+else:
+    st.warning("暂无推荐结果，请先到运营后台发布策略。")
+
+st.markdown(
+    '<p class="footer-note">数据源: 模拟数据 ｜ 策略: 人工 > 算法 > 兜底 ｜ 今日: 2026-09-21</p>',
+    unsafe_allow_html=True,
+)
