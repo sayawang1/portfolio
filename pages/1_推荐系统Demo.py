@@ -4,6 +4,7 @@ import os
 import json
 import numpy as np
 import pandas as pd
+from datetime import datetime
 
 from data_providers.slot_provider import get_slots_with_source
 from data_providers.product_provider import get_products_with_source
@@ -16,6 +17,7 @@ CONFIG_DIR = os.path.join(
 )
 
 
+# ---------- 算法 ----------
 def build_item_similarity(interactions):
     from sklearn.metrics.pairwise import cosine_similarity
     matrix = interactions.pivot_table(index="user_id", columns="product_id", values="rating", fill_value=0)
@@ -64,6 +66,121 @@ def recommend_by_algorithm(user_id, algo_type, interactions, item_sim, products,
         return products[products["status"] == "在售"].nlargest(top_n, "popularity")
 
 
+# ---------- 策略引擎（含权重竞争） ----------
+def _match_target(user, target_type, condition):
+    if target_type == "all" or not condition:
+        return True
+    if target_type == "tag":
+        try:
+            return bool(eval(condition, {"__builtins__": {}}, dict(user)))
+        except Exception:
+            return False
+    return False
+
+
+def _in_time_window(start_str, end_str):
+    try:
+        now = datetime.now()
+        start = datetime.strptime(start_str, "%Y-%m-%d %H:%M:%S")
+        end = datetime.strptime(end_str, "%Y-%m-%d %H:%M:%S")
+        return start <= now <= end
+    except Exception:
+        return True
+
+
+def get_manual_result(slot_id, user, products):
+    data_path = os.path.join(CONFIG_DIR, "manual_config.json")
+    if not os.path.exists(data_path):
+        return None
+    try:
+        with open(data_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return None
+
+    for rule in data.get("manual_rules", []):
+        if not rule.get("enabled") or rule.get("is_fallback"):
+            continue
+        if rule.get("slot_id") != slot_id:
+            continue
+        if not _in_time_window(rule.get("start_time"), rule.get("end_time")):
+            continue
+        if not _match_target(user, rule.get("target_type"), rule.get("target_condition")):
+            continue
+        items = rule.get("items", [])
+        matched = products[products["product_id"].isin(items)]
+        if len(matched) > 0:
+            return {
+                "source": "manual",
+                "strategy_name": rule.get("remark", "人工强干预"),
+                "weight": rule.get("manual_weight", 80),
+                "items": matched,
+            }
+    return None
+
+
+def get_algorithm_result(slot_id, user, interactions, item_sim, products):
+    data_path = os.path.join(CONFIG_DIR, "algorithm_config.json")
+    if not os.path.exists(data_path):
+        return None
+    try:
+        with open(data_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return None
+
+    bind = data.get("slot_algorithm_bind", {}).get(slot_id)
+    if not bind:
+        return None
+
+    algo_id = bind.get("algo_id", "bytedance_ps")
+    algo_weight = bind.get("algo_weight", 65)
+    items = recommend_by_algorithm(user["user_id"], algo_id, interactions, item_sim, products, top_n=5)
+    if items is not None and len(items) > 0:
+        return {
+            "source": "algorithm",
+            "strategy_name": f"算法推荐（{algo_id}）",
+            "weight": algo_weight,
+            "items": items,
+        }
+    return None
+
+
+def get_fallback_result(slot_id, user, interactions, item_sim, products):
+    items = recommend_by_algorithm(user["user_id"], "popularity", interactions, item_sim, products, top_n=5)
+    return {
+        "source": "fallback",
+        "strategy_name": "全量兜底（热门）",
+        "weight": 0,
+        "items": items,
+    }
+
+
+def execute_strategy(slot_id, user, interactions, item_sim, products):
+    manual = get_manual_result(slot_id, user, products)
+    algo = get_algorithm_result(slot_id, user, interactions, item_sim, products)
+
+    if manual and algo:
+        # 权重竞争
+        if manual["weight"] >= algo["weight"]:
+            manual["competition"] = f"人工 {manual['weight']} vs 算法 {algo['weight']} → 人工胜出"
+            return manual
+        else:
+            algo["competition"] = f"人工 {manual['weight']} vs 算法 {algo['weight']} → 算法胜出"
+            return algo
+    elif manual:
+        manual["competition"] = "仅人工命中"
+        return manual
+    elif algo:
+        algo["competition"] = "仅算法命中"
+        return algo
+    else:
+        fallback = get_fallback_result(slot_id, user, interactions, item_sim, products)
+        fallback["competition"] = "均未命中 → 兜底"
+        return fallback
+
+
+# ---------- 页面 ----------
 st.set_page_config(page_title="推荐系统 Demo", page_icon="🛒", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
@@ -88,12 +205,37 @@ st.markdown("""
     }
     .rec-card h4 { margin: 0 0 6px 0; color: #FFFFFF; }
     .rec-card .meta { color: #6B7280; font-size: 12px; }
+    .final-card {
+        background-color: #1F2937; border: 2px solid #FF4B4B;
+        border-radius: 12px; padding: 18px; margin: 12px 0 24px 0;
+    }
+    .final-card h3 { margin: 0 0 8px 0; color: #FF4B4B; }
     .footer-note { color: #4B5563; font-size: 12px; }
+    .user-selector { background-color: #151A1F; border-radius: 10px; padding: 12px; margin-bottom: 16px; }
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown("# 📈 推荐系统 · 选品 & 效果预览")
 
+# ---------- 用户选择器 ----------
+users_all, user_source = get_users_with_source()
+products_all, product_source = get_products_with_source()
+interactions_all, interaction_source = get_interactions_with_source(users_all, products_all)
+item_sim_all = build_item_similarity(interactions_all)
+
+with st.container():
+    st.markdown('<div class="user-selector">', unsafe_allow_html=True)
+    c_u1, c_u2, c_u3 = st.columns([2, 3, 3])
+    with c_u1:
+        selected_user_id = st.selectbox("👤 选择用户", users_all["user_id"].tolist(), index=0)
+    user_row = users_all[users_all["user_id"] == selected_user_id].iloc[0]
+    with c_u2:
+        st.markdown(f"**VIP**：{'✅ 是' if user_row['is_vip'] == 1 else '❌ 否'} ｜ **资产等级**：{user_row['aum_level']}")
+    with c_u3:
+        st.markdown(f"**城市**：{user_row['city_tier']} ｜ **风险承受**：R{user_row['risk_tolerance']}")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# ---------- 坑位选择 ----------
 slot_list, slot_source = get_slots_with_source()
 slot_map = {}
 for s in slot_list:
@@ -117,47 +259,40 @@ slot_id = slot_map[st.session_state.selected_slot_label]
 c_left, c_right = st.columns([1, 3])
 with c_left:
     st.markdown('<div class="primary-btn">', unsafe_allow_html=True)
-    run = st.button("🚀 开始推荐", use_container_width=True)
+    st.button("🚀 开始推荐", use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-products, product_source = get_products_with_source()
-users, user_source = get_users_with_source()
-interactions, interaction_source = get_interactions_with_source(users, products)
-item_sim = build_item_similarity(interactions)
-
-algo_id = "bytedance_ps"
-algo_weight = 65
-ab_info = "未开启"
-algo_path = os.path.join(CONFIG_DIR, "algorithm_config.json")
-if os.path.exists(algo_path):
-    try:
-        with open(algo_path, "r", encoding="utf-8") as f:
-            algo_data = json.load(f)
-        bind = algo_data.get("slot_algorithm_bind", {}).get(slot_id, {})
-        algo_id = bind.get("algo_id", "bytedance_ps")
-        algo_weight = bind.get("algo_weight", 65)
-        ab = bind.get("ab_test", {})
-        if ab.get("enabled"):
-            ab_info = f"A组 {ab.get('group_a_ratio', 50)}% / B组 {100 - ab.get('group_a_ratio', 50)}%"
-    except Exception:
-        pass
-
-user = users.iloc[0]
-items = recommend_by_algorithm(user["user_id"], algo_id, interactions, item_sim, products, top_n=5)
+# ---------- 策略执行 ----------
+result = execute_strategy(slot_id, user_row, interactions_all, item_sim_all, products_all)
 
 with c_right:
     st.markdown(
         f'<span class="cond-badge">坑位: {slot_id}</span>'
-        f'<span class="cond-badge">算法: {algo_id}</span>'
-        f'<span class="cond-badge">权重: {algo_weight}</span>'
-        f'<span class="cond-badge">AB: {ab_info}</span>',
+        f'<span class="cond-badge">策略: {result["strategy_name"]}</span>'
+        f'<span class="cond-badge">权重: {result["weight"]}</span>'
+        f'<span class="cond-badge">竞争: {result.get("competition", "-")}</span>',
         unsafe_allow_html=True,
     )
 
 st.markdown("---")
-st.markdown("### 📋 推荐结果")
 
+# ---------- 最终展示 ----------
+items = result.get("items")
 if items is not None and len(items) > 0:
+    # 判断是否单条展示（Banner 类坑位）
+    is_single_slot = "banner" in slot_id.lower() or "banner" in st.session_state.selected_slot_label.lower()
+
+    if is_single_slot:
+        final = items.iloc[0]
+        st.markdown("### 🎯 最终展示位（唯一）")
+        st.markdown(f"""
+        <div class="final-card">
+            <h3>🏆 {final.get('name', final['product_id'])}</h3>
+            <div style="color:#9CA3AF;">类别：{final.get('category', '-')} ｜ 风险：R{final.get('risk_level', '-')} ｜ 热度：{final.get('popularity', '-')}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("### 📋 推荐列表（候选池）")
     for _, row in items.iterrows():
         st.markdown(f"""
         <div class="rec-card">
