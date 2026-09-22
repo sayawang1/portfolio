@@ -1,4 +1,4 @@
-"""推荐系统运营后台 - 深色 + 白底输入框 + GitHub 持久化"""
+"""推荐系统运营后台 - 支持多组（产品+图标+跳转）"""
 import streamlit as st
 import os
 import json
@@ -8,6 +8,7 @@ import requests
 from datetime import datetime
 
 from data_providers.slot_provider import get_slots_with_source
+from data_providers.product_provider import get_products
 
 CONFIG_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -15,14 +16,12 @@ CONFIG_DIR = os.path.join(
 )
 os.makedirs(CONFIG_DIR, exist_ok=True)
 
-# ========== GitHub 持久化配置 ==========
-GITHUB_REPO = "sayawang1/portfolio"       # 你的仓库
+GITHUB_REPO = "sayawang1/portfolio"
 GITHUB_BRANCH = "main"
-CONFIG_REPO_PATH = "recommendation-demo/configs"   # 仓库里的路径
+CONFIG_REPO_PATH = "recommendation-demo/configs"
 
 
 def _get_github_token():
-    """从 Streamlit Secrets 读取 GitHub Token"""
     try:
         return st.secrets["GITHUB_TOKEN"]
     except Exception:
@@ -30,46 +29,28 @@ def _get_github_token():
 
 
 def _github_commit_file(filename, content_dict):
-    """
-    把 JSON 文件通过 GitHub API 提交回仓库
-    filename: 例如 manual_config.json
-    content_dict: 要写入的字典
-    """
     token = _get_github_token()
     if not token:
         return False, "未配置 GITHUB_TOKEN，仅保存在本地"
-
     path = f"{CONFIG_REPO_PATH}/{filename}"
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
-    headers = {
-        "Authorization": f"token {token}",
-        "Accept": "application/vnd.github.v3+json",
-    }
-
-    # 先获取当前文件的 sha（更新时必须提供）
+    headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
     try:
         r = requests.get(url, headers=headers, params={"ref": GITHUB_BRANCH}, timeout=5)
         sha = r.json().get("sha") if r.status_code == 200 else None
     except Exception:
         sha = None
-
     content_str = json.dumps(content_dict, ensure_ascii=False, indent=2)
     content_b64 = base64.b64encode(content_str.encode("utf-8")).decode("utf-8")
-
-    payload = {
-        "message": f"update {filename} via 运营后台",
-        "content": content_b64,
-        "branch": GITHUB_BRANCH,
-    }
+    payload = {"message": f"update {filename} via 运营后台", "content": content_b64, "branch": GITHUB_BRANCH}
     if sha:
         payload["sha"] = sha
-
     try:
         r = requests.put(url, headers=headers, json=payload, timeout=10)
         if r.status_code in (200, 201):
             return True, "已提交到 GitHub"
         else:
-            return False, f"GitHub API 返回 {r.status_code}: {r.text[:200]}"
+            return False, f"GitHub API 返回 {r.status_code}"
     except Exception as e:
         return False, f"GitHub 提交异常: {str(e)}"
 
@@ -151,6 +132,10 @@ AUDIENCE_COND_MAP = {
 slot_list, slot_source = get_slots_with_source()
 slot_options = [s["slot_id"] for s in slot_list]
 
+# 产品列表
+products_all = get_products()
+product_options = [f"{row['product_id']} - {row['name']}" for _, row in products_all.iterrows()]
+
 # ========== 顶部：策略列表 ==========
 st.markdown("### 📋 已发布策略列表")
 manual_data = load_json("manual_config.json", {"manual_rules": []})
@@ -159,21 +144,19 @@ rules = manual_data.get("manual_rules", [])
 if rules:
     for idx, rule in enumerate(rules):
         with st.container(border=True):
-            c1, c2, c3, c4, c5, c6, c7 = st.columns([1.1, 2.0, 1.2, 1.2, 1.5, 1.0, 0.9])
+            c1, c2, c3, c4, c5, c6 = st.columns([1.3, 2.0, 1.5, 1.2, 1.2, 0.9])
             with c1:
                 st.markdown(f"**{rule['rule_id']}**")
             with c2:
                 st.markdown(f"{rule.get('slot_id', '-')} ｜ {rule.get('remark', '-')}")
             with c3:
-                st.markdown(f"人工权重: **{rule.get('manual_weight', '-')}**")
-            with c4:
-                st.markdown(f"算法权重: **{rule.get('algo_weight', '-')}**")
-            with c5:
                 st.markdown(f"客群: {rule.get('audience_label', '-')}")
-            with c6:
+            with c4:
+                st.markdown(f"人工权重: **{rule.get('manual_weight', '-')}**")
+            with c5:
                 fb = "是" if rule.get("is_fallback") else "否"
                 st.markdown(f"兜底: {fb}")
-            with c7:
+            with c6:
                 if st.button("🗑️ 删除", key=f"del_{idx}"):
                     rules.pop(idx)
                     manual_data["manual_rules"] = rules
@@ -214,22 +197,17 @@ with col_right:
         algo_weight = st.slider("策略权重（与人工竞争用，0-100）", 0, 100, 65, 5)
 
         st.markdown("**AB 测试（作用于算法层）**")
-        ab_enabled = st.toggle("启用 AB 测试", value=True)
+        ab_enabled = st.toggle("启用 AB 测试", value=False)
         group_a = 70
         ab_group_a_algo = "协同过滤 ItemCF"
         ab_group_b_algo = "字节千人千面"
         if ab_enabled:
             group_a = st.slider("A 组流量 %", 0, 100, 70, 5)
-            st.caption(f"A组 {group_a}% ｜ B组 {100 - group_a}%")
             d1, d2 = st.columns(2)
             with d1:
                 ab_group_a_algo = st.selectbox("A 组算法", MODEL_OPTIONS, index=3, key="ab_a")
             with d2:
                 ab_group_b_algo = st.selectbox("B 组算法", MODEL_OPTIONS, index=2, key="ab_b")
-
-        with st.expander("模型参数（展开）"):
-            st.text_input("recall_num", value="200")
-            st.text_input("rank_num", value="20")
 
 st.divider()
 
@@ -244,19 +222,47 @@ with st.container(border=True):
             default=["精准·VIP会员"],
             key="manual_audience",
         )
-        icon_file = st.text_input("图标展示", value="campaign_icon.png")
-        jump_url = st.text_input("跳转链接", value="https://app.example.com/promo/2026q3")
         manual_weight = st.slider("人工权重（与算法竞争用，0-100）", 0, 100, 80, 5)
         is_fallback = st.toggle("作为兜底配置（人工和算法都未命中时生效）", value=False)
     with c2:
         st.markdown("**生效条件**")
         selected_conds = st.multiselect("已选条件", CONDITION_OPTIONS, default=CONDITION_OPTIONS)
-        badges_html = "".join([f'<span class="badge">{c}</span>' for c in selected_conds])
-        st.markdown(badges_html, unsafe_allow_html=True)
         st.markdown("**高级设置**")
         selected_adv = st.multiselect("已选高级设置", ADV_OPTIONS, default=ADV_OPTIONS)
-        adv_html = "".join([f'<span class="badge">{a}</span>' for a in selected_adv])
-        st.markdown(adv_html, unsafe_allow_html=True)
+
+st.markdown("#### 🎯 人工推荐位配置（每条：产品 + 图标 + 跳转链接）")
+
+# 用 session_state 管理动态条目
+if "item_rows" not in st.session_state:
+    st.session_state.item_rows = [
+        {"product": product_options[0] if product_options else "", "icon": "campaign_icon_1.png", "url": "https://app.example.com/product/1"},
+        {"product": product_options[1] if len(product_options) > 1 else "", "icon": "campaign_icon_2.png", "url": "https://app.example.com/product/2"},
+        {"product": product_options[2] if len(product_options) > 2 else "", "icon": "campaign_icon_3.png", "url": "https://app.example.com/product/3"},
+    ]
+
+with st.container(border=True):
+    for i, row in enumerate(st.session_state.item_rows):
+        c1, c2, c3, c4 = st.columns([3, 3, 4, 1])
+        with c1:
+            row["product"] = st.selectbox(
+                f"产品 {i+1}",
+                product_options,
+                index=product_options.index(row["product"]) if row["product"] in product_options else 0,
+                key=f"prod_{i}",
+            )
+        with c2:
+            row["icon"] = st.text_input(f"图标 {i+1}", value=row["icon"], key=f"icon_{i}")
+        with c3:
+            row["url"] = st.text_input(f"跳转链接 {i+1}", value=row["url"], key=f"url_{i}")
+        with c4:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("❌", key=f"rm_{i}"):
+                st.session_state.item_rows.pop(i)
+                st.rerun()
+
+    if st.button("➕ 添加一条"):
+        st.session_state.item_rows.append({"product": product_options[0] if product_options else "", "icon": "", "url": ""})
+        st.rerun()
 
 st.divider()
 
@@ -293,6 +299,18 @@ with c_publish:
 
         base_cond = AUDIENCE_COND_MAP.get(base_audience, "")
 
+        # 组装 items：每条含 product_id + icon + jump_url
+        items_payload = []
+        for row in st.session_state.item_rows:
+            if not row["product"]:
+                continue
+            pid = row["product"].split(" - ")[0].strip()
+            items_payload.append({
+                "product_id": pid,
+                "icon": row["icon"],
+                "jump_url": row["url"],
+            })
+
         manual_data = load_json("manual_config.json", {"manual_rules": []})
         manual_data["manual_rules"].append({
             "rule_id": f"rule_{uuid.uuid4().hex[:6]}",
@@ -304,12 +322,10 @@ with c_publish:
             "target_type": target_type,
             "target_condition": target_condition,
             "audience_label": audience_label,
-            "items": ["P001", "P002", "P003", "P004", "P005"],
+            "items": items_payload,
             "traffic_pct": 100,
             "manual_weight": manual_weight,
             "algo_weight": algo_weight,
-            "icon": icon_file,
-            "jump_url": jump_url,
             "start_time": start_str,
             "end_time": end_str,
             "is_fallback": is_fallback,
@@ -333,11 +349,12 @@ with c_publish:
         save_json("algorithm_config.json", algo_data)
         ok2, msg2 = _github_commit_file("algorithm_config.json", algo_data)
 
-        st.success(f"✅ 策略已发布！\n\n- 人工配置: {msg1}\n- 算法配置: {msg2}")
+        st.success(f"✅ 策略已发布！人工配置: {msg1} ｜ 算法配置: {msg2}")
         st.rerun()
 
 st.markdown(
-    f'<p class="footer-note">数据源: 外部坑位系统（{slot_source}） ｜ 配置目录: recommendation-demo/configs ｜ 今日: 2026-09-21</p>',
+    f'<p class="footer-note">数据源: 外部坑位系统（{slot_source}） ｜ 配置目录: recommendation-demo/configs ｜ 今日: 2026-09-22</p>',
     unsafe_allow_html=True,
 )
-   
+
+        
