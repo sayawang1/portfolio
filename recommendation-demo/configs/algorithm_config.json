@@ -3,7 +3,7 @@
   "slot_algorithm_bind": {
     "app_home_banner": {
       "algo_id": "deepfm",
-      "algo_weight": 50,
+      "algo_weight": 45,
       "base_condition": "",
       "ab_test": {
         "enabled": false,
