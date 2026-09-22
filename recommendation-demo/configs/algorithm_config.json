@@ -36,6 +36,18 @@
         "group_a_algo": "item_cf",
         "group_b_algo": "bytedance_ps"
       }
+    },
+    "ad_layer": {
+      "algo_id": "item_cf",
+      "algo_weight": 100,
+      "base_condition": "is_registered == 1",
+      "require_registered": false,
+      "ab_test": {
+        "enabled": false,
+        "group_a_ratio": 100,
+        "group_a_algo": "item_cf",
+        "group_b_algo": "bytedance_ps"
+      }
     }
   }
 }
