@@ -1,5 +1,29 @@
 """推荐系统运营后台"""
 import streamlit as st
+import streamlit as st
+
+# 1. 页面基本设置
+st.set_page_config(
+    page_title="推荐系统Demo",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+# 2. 注入 CSS：彻底隐藏左侧导航栏，并强制背景深色
+st.markdown("""
+<style>
+    /* 隐藏自带的侧边栏及其导航 */
+    [data-testid="stSidebar"] { display: none !important; }
+    [data-testid="stSidebarNav"] { display: none !important; }
+    
+    /* 强制页面背景色与首页一致 */
+    .stApp { background-color: #0B0E11 !important; }
+</style>
+""", unsafe_allow_html=True)
+
+# === 下面是你原本页面的代码 ===
+# st.title("📈 推荐系统·选品 & 效果预览")
+# ...
 import os
 import json
 import uuid
