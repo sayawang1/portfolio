@@ -335,7 +335,7 @@ with c_publish:
 
         algo_data = load_json("algorithm_config.json", {"algorithms": [], "slot_algorithm_bind": {}})
         algo_data.setdefault("slot_algorithm_bind", {})[slot_id] = {
-            "algo_id": "bytedance_ps" if "字节" in model else "item_cf",
+            MODEL_TO_ALGO = {     "DeepFM v3（精排）": "deepfm",     "双塔召回（DSSM）": "dssm",     "字节千人千面": "bytedance_ps",     "协同过滤 ItemCF": "item_cf",     "内容召回 ContentBased": "content_based", } algo_id = MODEL_TO_ALGO.get(model, "item_cf")
             "algo_weight": algo_weight,
             "base_condition": base_cond,
             "ab_test": {
