@@ -1,9 +1,10 @@
-"""推荐系统运营后台 - 保持原布局，只把图标/跳转改成下拉"""
+"""推荐系统运营后台 - 图标/链接编号自动映射产品"""
 import streamlit as st
 import os
 import json
 import uuid
 import base64
+import re
 import requests
 from datetime import datetime
 
@@ -19,7 +20,6 @@ GITHUB_REPO = "sayawang1/portfolio"
 GITHUB_BRANCH = "main"
 CONFIG_REPO_PATH = "recommendation-demo/configs"
 
-# ========== 下拉候选：模拟真实系统返回的图标 & 跳转链接 ==========
 ICON_OPTIONS = [
     "campaign_icon_1.png",
     "campaign_icon_2.png",
@@ -35,6 +35,23 @@ URL_OPTIONS = [
     "https://app.example.com/product/4",
     "https://app.example.com/product/5",
 ]
+
+
+def _extract_number(icon_str, url_str):
+    """
+    从图标或链接里提取编号，作为产品映射依据
+    优先级：先看 URL（因为 URL 里的 /1 /2 /3 更明确），再看图标
+    """
+    # 从 URL 里提取最后一段数字
+    m = re.search(r"/(\d+)/?$", url_str)
+    if m:
+        return int(m.group(1))
+    # 从图标里提取 campaign_icon_3.png → 3
+    m = re.search(r"icon_(\d+)", icon_str)
+    if m:
+        return int(m.group(1))
+    # 兜底：找不到编号就返回 None
+    return None
 
 
 def _get_github_token():
@@ -219,19 +236,17 @@ with st.container(border=True):
     c1, c2 = st.columns(2)
     with c1:
         manual_audiences = st.multiselect(
-            "人工客群（可多选，AND 关系；不选则继承基础客群）",
+            "人工客群",
             AUDIENCE_OPTIONS,
             default=["精准·VIP会员"],
             key="manual_audience",
         )
-        # 下拉选择图标（多选，按顺序映射 P001、P002...）
         icon_selected = st.multiselect(
             "图标展示",
             ICON_OPTIONS,
             default=ICON_OPTIONS[:1],
             key="icon_select",
         )
-        # 下拉选择跳转链接（多选，与图标一一对应）
         url_selected = st.multiselect(
             "跳转链接",
             URL_OPTIONS,
@@ -242,9 +257,9 @@ with st.container(border=True):
         is_fallback = st.toggle("作为兜底配置", value=False)
     with c2:
         st.markdown("**生效条件**")
-        st.multiselect("已选条件", CONDITION_OPTIONS, default=CONDITION_OPTIONS, label_visibility="collapsed")
+        st.multiselect("条件", CONDITION_OPTIONS, default=CONDITION_OPTIONS, label_visibility="collapsed")
         st.markdown("**高级设置**")
-        st.multiselect("已选高级设置", ADV_OPTIONS, default=ADV_OPTIONS, label_visibility="collapsed")
+        st.multiselect("设置", ADV_OPTIONS, default=ADV_OPTIONS, label_visibility="collapsed")
 
 st.divider()
 
@@ -281,13 +296,14 @@ with c_publish:
 
         base_cond = AUDIENCE_COND_MAP.get(base_audience, "")
 
-        # 产品自动映射：第 1 个图标 + 第 1 个链接 → P001，依此类推
+        # ⭐ 关键改动：按图标/链接里的编号提取产品 ID
         items_payload = []
         max_len = max(len(icon_selected), len(url_selected))
         for idx in range(max_len):
-            pid = f"P{idx+1:03d}"
             icon = icon_selected[idx] if idx < len(icon_selected) else ""
             url = url_selected[idx] if idx < len(url_selected) else ""
+            num = _extract_number(icon, url)
+            pid = f"P{num:03d}" if num else f"P{idx+1:03d}"
             items_payload.append({
                 "product_id": pid,
                 "icon": icon,
@@ -332,7 +348,7 @@ with c_publish:
         save_json("algorithm_config.json", algo_data)
         _github_commit_file("algorithm_config.json", algo_data)
 
-        st.success("✅ 策略已发布！")
+        st.success(f"✅ 策略已发布！产品映射：{', '.join([x['product_id'] for x in items_payload])}")
         st.rerun()
 
 st.markdown(
