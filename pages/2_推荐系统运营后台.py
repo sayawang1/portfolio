@@ -141,18 +141,20 @@ st.title("🎛️ 推荐系统运营后台")
 st.caption("人工 > 算法 > 兜底 ｜ 权重竞争：人工权重×100+算法权重")
 
 TIME_OPTIONS = ["2026 Q3 大促周期 (9/1-9/30)", "长期有效", "2026 双十一周期 (11/1-11/11)", "自定义时间段"]
-AUDIENCE_OPTIONS = ["全量用户", "精准·VIP会员", "新用户", "高净值客户", "活跃用户", "流失预警用户"]
+AUDIENCE_OPTIONS = ["全量用户", "注册用户", "非注册游客", "精准·VIP会员", "新用户", "高净值客户", "活跃用户", "流失预警用户"]
 MODEL_OPTIONS = ["DeepFM v3（精排）", "双塔召回（DSSM）", "字节千人千面", "协同过滤 ItemCF", "内容召回 ContentBased"]
 CONDITION_OPTIONS = ["设备: iOS/Android", "地域: 上海/杭州", "时段: 10:00-22:00", "用户: 已登录"]
 ADV_OPTIONS = ["冷启动: 新用户走热门", "频控: 每用户日 3 次", "去重: 排除已点击"]
 
 AUDIENCE_COND_MAP = {
     "全量用户": "",
+    "注册用户": "is_registered == 1",
+    "非注册游客": "is_registered == 0",
     "精准·VIP会员": "is_vip == 1",
-    "新用户": "is_registered == 1",
+    "新用户": "is_new == 1",
     "高净值客户": "aum_level == '高'",
-    "活跃用户": "is_registered == 1",
-    "流失预警用户": "is_registered == 1",
+    "活跃用户": "is_active == 1",
+    "流失预警用户": "is_churn_risk == 1",
 }
 
 slot_list, slot_source = get_slots_with_source()
@@ -215,11 +217,12 @@ with col_right:
         model = st.selectbox("模型选择", MODEL_OPTIONS, index=0, key="algo_model")
         st.number_input("召回数量 Top-K", min_value=10, max_value=200, value=200, step=10)
         algo_weight = st.slider("策略权重（与人工竞争用，0-100）", 0, 100, 65, 5)
+        require_registered = st.toggle("仅注册用户生效（非注册用户走兜底）", value=True)
 
         ab_enabled = st.toggle("启用 AB 测试", value=False)
         group_a = 70
-        ab_group_a_algo = "item_cf"
-        ab_group_b_algo = "bytedance_ps"
+        ab_group_a_algo = "协同过滤 ItemCF"
+        ab_group_b_algo = "字节千人千面"
         if ab_enabled:
             group_a = st.slider("A 组流量 %", 0, 100, 70, 5)
             d1, d2 = st.columns(2)
@@ -297,7 +300,6 @@ with c_publish:
 
         base_cond = AUDIENCE_COND_MAP.get(base_audience, "")
 
-        # 产品映射：按图标/链接里的编号提取
         items_payload = []
         max_len = max(len(icon_selected), len(url_selected))
         for idx in range(max_len):
@@ -340,6 +342,7 @@ with c_publish:
             "algo_id": algo_id,
             "algo_weight": algo_weight,
             "base_condition": base_cond,
+            "require_registered": require_registered,
             "ab_test": {
                 "enabled": ab_enabled,
                 "group_a_ratio": group_a if ab_enabled else 100,
