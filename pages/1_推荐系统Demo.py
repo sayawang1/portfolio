@@ -1,4 +1,4 @@
-"""推荐系统 Demo - 坑位高亮选中，数据在下方展示"""
+"""推荐系统 Demo - 坑位高亮 + session 持久化"""
 import streamlit as st
 import os
 import json
@@ -239,16 +239,18 @@ st.markdown("""
     .stApp { background-color: #0B0E11; color: #E6E6E6; }
     h1, h2, h3, h4 { color: #FFFFFF !important; }
 
-    /* 普通按钮 */
-    .stButton>button {
+    /* 坑位按钮：加宽、等高 */
+    div[data-testid="column"] .stButton>button {
         background-color: #1C2228; color: #E6E6E6;
-        border: 1px solid #2A323A; border-radius: 8px;
-        padding: 10px 18px; font-weight: 500;
-        width: 100%;
+        border: 1px solid #2A323A; border-radius: 10px;
+        padding: 14px 20px; font-weight: 500;
+        width: 100%; font-size: 15px;
     }
-    .stButton>button:hover { border-color: #FF4B4B; color: #FF4B4B; }
+    div[data-testid="column"] .stButton>button:hover {
+        border-color: #FF4B4B; color: #FF4B4B;
+    }
 
-    /* 选中按钮（红色高亮） */
+    /* 高亮的坑位：用主按钮样式覆盖 */
     .slot-active .stButton>button {
         background-color: #FF4B4B !important;
         color: #FFFFFF !important;
@@ -300,20 +302,39 @@ products_all, product_source = get_products_with_source()
 interactions_all, interaction_source = get_interactions_with_source(users_all, products_all)
 item_sim_all = build_item_similarity(interactions_all)
 
-# ========== 用户选择 ==========
+# ========== 用户选择（无默认值） ==========
+user_options = [""] + users_all["user_id"].tolist()
+if "selected_user_id" not in st.session_state:
+    st.session_state.selected_user_id = ""
+
 c_u1, c_u2, c_u3 = st.columns([2, 3, 3])
 with c_u1:
-    selected_user_id = st.selectbox("👤 选择用户", users_all["user_id"].tolist(), index=0)
-user_row = users_all[users_all["user_id"] == selected_user_id].iloc[0]
-with c_u2:
-    st.markdown(f"**VIP**：{'✅ 是' if user_row['is_vip'] == 1 else '❌ 否'} ｜ **资产等级**：{user_row['aum_level']}")
-with c_u3:
-    st.markdown(f"**城市**：{user_row['city_tier']} ｜ **风险承受**：R{user_row['risk_tolerance']}")
+    selected_user_id = st.selectbox(
+        "👤 选择用户",
+        user_options,
+        index=user_options.index(st.session_state.selected_user_id) if st.session_state.selected_user_id in user_options else 0,
+        key="user_select",
+    )
+    st.session_state.selected_user_id = selected_user_id
 
-# ========== 坑位选择（高亮选中的） ==========
+user_row = None
+if selected_user_id:
+    user_row = users_all[users_all["user_id"] == selected_user_id].iloc[0]
+
+with c_u2:
+    if user_row is not None:
+        st.markdown(f"**VIP**：{'✅ 是' if user_row['is_vip'] == 1 else '❌ 否'} ｜ **资产等级**：{user_row['aum_level']}")
+    else:
+        st.markdown("**VIP**：- ｜ **资产等级**：-")
+with c_u3:
+    if user_row is not None:
+        st.markdown(f"**城市**：{user_row['city_tier']} ｜ **风险承受**：R{user_row['risk_tolerance']}")
+    else:
+        st.markdown("**城市**：- ｜ **风险承受**：-")
+
+# ========== 坑位选择（高亮，无默认值） ==========
 slot_list, slot_source = get_slots_with_source()
 
-# 顺序固定：Banner → 信息流 → 侧边栏 → 广告层
 SLOT_ORDER = ["app_home_banner", "app_home_feed", "web_sidebar", "ad_layer"]
 SLOT_LABEL = {
     "app_home_banner": "🎯 APP首页Banner",
@@ -322,103 +343,109 @@ SLOT_LABEL = {
     "ad_layer": "🎯 广告层",
 }
 
-# 从 provider 拿到的 slot_list 里只保留有配置的坑位（按顺序）
 available_slots = [s["slot_id"] for s in slot_list]
 ordered_slots = [sid for sid in SLOT_ORDER if sid in available_slots]
-
 if not ordered_slots:
-    ordered_slots = SLOT_ORDER  # 兜底
+    ordered_slots = SLOT_ORDER
 
 if "selected_slot_id" not in st.session_state:
-    st.session_state.selected_slot_id = ordered_slots[0]
+    st.session_state.selected_slot_id = ""
 
-# 渲染坑位按钮
-btn_cols = st.columns(len(ordered_slots))
+# 一行 4 个坑位按钮（固定 4 列）
+btn_cols = st.columns(4)
 for i, sid in enumerate(ordered_slots):
     is_selected = (sid == st.session_state.selected_slot_id)
     with btn_cols[i]:
         if is_selected:
             st.markdown('<div class="slot-active">', unsafe_allow_html=True)
         if st.button(SLOT_LABEL.get(sid, sid), key=f"slot_btn_{sid}"):
-            st.session_state.selected_slot_id = sid
+            if is_selected:
+                st.session_state.selected_slot_id = ""
+            else:
+                st.session_state.selected_slot_id = sid
             st.rerun()
         if is_selected:
             st.markdown('</div>', unsafe_allow_html=True)
 
 slot_id = st.session_state.selected_slot_id
 
-# ========== 执行策略 ==========
-result = execute_strategy(slot_id, user_row, interactions_all, item_sim_all, products_all)
+# ========== 判断是否展示数据 ==========
+show_data = bool(user_row is not None and slot_id)
 
-# ========== 策略 badge 展示在按钮下方 ==========
-st.markdown(
-    f'<span class="cond-badge">策略来源: {result["source"]}</span>'
-    f'<span class="cond-badge">命中策略: {result.get("strategy_id", "-")}</span>'
-    f'<span class="cond-badge">竞争: {result.get("competition", "-")}</span>',
-    unsafe_allow_html=True,
-)
-
-st.markdown("---")
-
-# ========== 展示内容 ==========
-merged_items = result.get("items")
-manual_items = result.get("manual_items")
-algo_items = result.get("algo_items")
-
-if merged_items is not None and len(merged_items) > 0:
-    is_single_slot = "banner" in slot_id.lower()
-
-    if is_single_slot:
-        final = merged_items.iloc[0]
-        icon_html = f'<span class="rec-icon">🎁</span>' if final.get("icon") else ""
-        st.markdown("### 🎯 最终展示位（唯一）")
-        st.markdown(f"""
-        <div class="final-card">
-            <h3>{icon_html} 🏆 {final.get('name', final['product_id'])}</h3>
-            <div style="color:#9CA3AF;">类别：{final.get('category', '-')} ｜ 风险：R{final.get('risk_level', '-')} ｜ 热度：{final.get('popularity', '-')}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        st.markdown("### 📋 推荐列表（候选池）")
-        for _, row in merged_items.iterrows():
-            icon_html = f'<span class="rec-icon">🎁</span>' if row.get("icon") else ""
-            url = row.get("jump_url", "")
-            url_line = f'<div class="meta">🔗 <a href="{url}" target="_blank" style="color:#4A90D9;">{url}</a></div>' if url else ""
-            st.markdown(f"""
-            <div class="rec-card">
-                <h4>{icon_html}{row.get('name', row['product_id'])}</h4>
-                <div class="meta">类别：{row.get('category', '-')} ｜ 风险：R{row.get('risk_level', '-')} ｜ 热度：{row.get('popularity', '-')}</div>
-                {url_line}
-            </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.markdown("### 📋 推荐列表")
-        for _, row in merged_items.iterrows():
-            icon_html = f'<span class="rec-icon">🎁</span>' if row.get("icon") else ""
-            url = row.get("jump_url", "")
-            url_line = f'<div class="meta">🔗 <a href="{url}" target="_blank" style="color:#4A90D9;">{url}</a></div>' if url else ""
-            st.markdown(f"""
-            <div class="rec-card">
-                <h4>{icon_html}{row.get('name', row['product_id'])}</h4>
-                <div class="meta">类别：{row.get('category', '-')} ｜ 风险：R{row.get('risk_level', '-')} ｜ 热度：{row.get('popularity', '-')}</div>
-                {url_line}
-            </div>
-            """, unsafe_allow_html=True)
-
-    m_count = len(manual_items) if manual_items is not None else 0
-    a_count = len(algo_items) if algo_items is not None else 0
+if not show_data:
     st.markdown(
-        f'<div class="mock-note">人工命中 {m_count} 条 ｜ 算法召回 {a_count} 条 ｜ 合并去重后共 {len(merged_items)} 条（模拟数据）</div>',
+        '<div class="no-data">请先选择「用户」和「坑位」，才会展示推荐结果。</div>',
         unsafe_allow_html=True,
     )
 else:
+    result = execute_strategy(slot_id, user_row, interactions_all, item_sim_all, products_all)
+
     st.markdown(
-        '<div class="no-data">该坑位暂未配置策略，请在运营后台配置后查看效果。</div>',
+        f'<span class="cond-badge">策略来源: {result["source"]}</span>'
+        f'<span class="cond-badge">命中策略: {result.get("strategy_id", "-")}</span>'
+        f'<span class="cond-badge">竞争: {result.get("competition", "-")}</span>',
         unsafe_allow_html=True,
     )
+
+    st.markdown("---")
+
+    merged_items = result.get("items")
+    manual_items = result.get("manual_items")
+    algo_items = result.get("algo_items")
+
+    if merged_items is not None and len(merged_items) > 0:
+        is_single_slot = "banner" in slot_id.lower()
+
+        if is_single_slot:
+            final = merged_items.iloc[0]
+            icon_html = f'<span class="rec-icon">🎁</span>' if final.get("icon") else ""
+            st.markdown("### 🎯 最终展示位（唯一）")
+            st.markdown(f"""
+            <div class="final-card">
+                <h3>{icon_html} 🏆 {final.get('name', final['product_id'])}</h3>
+                <div style="color:#9CA3AF;">类别：{final.get('category', '-')} ｜ 风险：R{final.get('risk_level', '-')} ｜ 热度：{final.get('popularity', '-')}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown("### 📋 推荐列表（候选池）")
+            for _, row in merged_items.iterrows():
+                icon_html = f'<span class="rec-icon">🎁</span>' if row.get("icon") else ""
+                url = row.get("jump_url", "")
+                url_line = f'<div class="meta">🔗 <a href="{url}" target="_blank" style="color:#4A90D9;">{url}</a></div>' if url else ""
+                st.markdown(f"""
+                <div class="rec-card">
+                    <h4>{icon_html}{row.get('name', row['product_id'])}</h4>
+                    <div class="meta">类别：{row.get('category', '-')} ｜ 风险：R{row.get('risk_level', '-')} ｜ 热度：{row.get('popularity', '-')}</div>
+                    {url_line}
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.markdown("### 📋 推荐列表")
+            for _, row in merged_items.iterrows():
+                icon_html = f'<span class="rec-icon">🎁</span>' if row.get("icon") else ""
+                url = row.get("jump_url", "")
+                url_line = f'<div class="meta">🔗 <a href="{url}" target="_blank" style="color:#4A90D9;">{url}</a></div>' if url else ""
+                st.markdown(f"""
+                <div class="rec-card">
+                    <h4>{icon_html}{row.get('name', row['product_id'])}</h4>
+                    <div class="meta">类别：{row.get('category', '-')} ｜ 风险：R{row.get('risk_level', '-')} ｜ 热度：{row.get('popularity', '-')}</div>
+                    {url_line}
+                </div>
+                """, unsafe_allow_html=True)
+
+        m_count = len(manual_items) if manual_items is not None else 0
+        a_count = len(algo_items) if algo_items is not None else 0
+        st.markdown(
+            f'<div class="mock-note">人工命中 {m_count} 条 ｜ 算法召回 {a_count} 条 ｜ 合并去重后共 {len(merged_items)} 条（模拟数据）</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<div class="no-data">该坑位暂未配置策略，请在运营后台配置后查看效果。</div>',
+            unsafe_allow_html=True,
+        )
 
 st.markdown(
     f'<p class="footer-note">数据源: 商品={product_source} ｜ 用户={user_source} ｜ 行为={interaction_source} ｜ 坑位={slot_source} ｜ 今日: 2026-09-22</p>',
     unsafe_allow_html=True,
 )
-
