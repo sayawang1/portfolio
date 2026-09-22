@@ -19,13 +19,15 @@ GITHUB_REPO = "sayawang1/portfolio"
 GITHUB_BRANCH = "main"
 CONFIG_REPO_PATH = "recommendation-demo/configs"
 
-# 图标和跳转链接的候选（模拟真实系统的下拉数据源）
+# ========== 下拉候选（模拟真实系统接口返回的候选列表） ==========
 ICON_OPTIONS = [
     "campaign_icon_1.png",
     "campaign_icon_2.png",
     "campaign_icon_3.png",
     "campaign_icon_4.png",
     "campaign_icon_5.png",
+    "promo_banner_a.png",
+    "promo_banner_b.png",
 ]
 
 URL_OPTIONS = [
@@ -34,6 +36,8 @@ URL_OPTIONS = [
     "https://app.example.com/product/3",
     "https://app.example.com/product/4",
     "https://app.example.com/product/5",
+    "https://app.example.com/promo/2026q3",
+    "https://app.example.com/promo/2026q4",
 ]
 
 
@@ -164,7 +168,7 @@ if rules:
                     rules.pop(idx)
                     manual_data["manual_rules"] = rules
                     save_json("manual_config.json", manual_data)
-                    ok, msg = _github_commit_file("manual_config.json", manual_data)
+                    _github_commit_file("manual_config.json", manual_data)
                     st.rerun()
 else:
     st.info("暂无已发布策略。")
@@ -189,13 +193,13 @@ with col_left:
                 custom_end = st.date_input("结束日期", value=datetime(2026, 12, 31))
 
         base_audience = st.selectbox("基础客群（大范围）", AUDIENCE_OPTIONS, index=0, key="base_audience")
-        full_release = st.checkbox("全量发布（跳过灰度，对所有匹配用户生效）", value=True)
+        st.checkbox("全量发布（跳过灰度，对所有匹配用户生效）", value=True)
 
 with col_right:
     st.markdown("### 算法策略")
     with st.container(border=True):
         model = st.selectbox("模型选择", MODEL_OPTIONS, index=0, key="algo_model")
-        top_k = st.number_input("召回数量 Top-K", min_value=10, max_value=200, value=200, step=10)
+        st.number_input("召回数量 Top-K", min_value=10, max_value=200, value=200, step=10)
         algo_weight = st.slider("策略权重（与人工竞争用，0-100）", 0, 100, 65, 5)
 
         ab_enabled = st.toggle("启用 AB 测试", value=False)
@@ -227,22 +231,23 @@ with st.container(border=True):
         is_fallback = st.toggle("作为兜底配置", value=False)
     with c2:
         st.markdown("**生效条件**")
-        st.multiselect("已选条件", CONDITION_OPTIONS, default=CONDITION_OPTIONS, label_visibility="collapsed")
+        st.multiselect("条件", CONDITION_OPTIONS, default=CONDITION_OPTIONS, label_visibility="collapsed")
         st.markdown("**高级设置**")
-        st.multiselect("已选高级设置", ADV_OPTIONS, default=ADV_OPTIONS, label_visibility="collapsed")
+        st.multiselect("设置", ADV_OPTIONS, default=ADV_OPTIONS, label_visibility="collapsed")
 
+# ========== 人工推荐位配置（下拉选择） ==========
 st.markdown("#### 🎯 人工推荐位配置")
 
 if "item_rows" not in st.session_state:
     st.session_state.item_rows = [
-        {"icon": "campaign_icon_1.png", "url": "https://app.example.com/product/1"},
-        {"icon": "campaign_icon_2.png", "url": "https://app.example.com/product/2"},
-        {"icon": "campaign_icon_3.png", "url": "https://app.example.com/product/3"},
+        {"icon": ICON_OPTIONS[0], "url": URL_OPTIONS[0]},
+        {"icon": ICON_OPTIONS[1], "url": URL_OPTIONS[1]},
+        {"icon": ICON_OPTIONS[2], "url": URL_OPTIONS[2]},
     ]
 
 with st.container(border=True):
     for i, row in enumerate(st.session_state.item_rows):
-        c1, c2, c3 = st.columns([1, 4, 4])
+        c1, c2, c3, c4 = st.columns([1, 4, 4, 0.6])
         with c1:
             st.markdown(f"**第 {i+1} 条**<br><span style='color:#9CA3AF;font-size:12px;'>→ P{i+1:03d}</span>", unsafe_allow_html=True)
         with c2:
@@ -261,12 +266,14 @@ with st.container(border=True):
                 key=f"url_{i}",
                 label_visibility="collapsed",
             )
+        with c4:
+            if st.button("❌", key=f"rm_{i}"):
+                st.session_state.item_rows.pop(i)
+                st.rerun()
 
-    ca, cb = st.columns([1, 5])
-    with ca:
-        if st.button("➕ 添加一条"):
-            st.session_state.item_rows.append({"icon": ICON_OPTIONS[0], "url": URL_OPTIONS[0]})
-            st.rerun()
+    if st.button("➕ 添加一条"):
+        st.session_state.item_rows.append({"icon": ICON_OPTIONS[0], "url": URL_OPTIONS[0]})
+        st.rerun()
 
 st.divider()
 
@@ -333,7 +340,7 @@ with c_publish:
             "remark": f"{audience_label} 人工强推",
         })
         save_json("manual_config.json", manual_data)
-        ok1, msg1 = _github_commit_file("manual_config.json", manual_data)
+        _github_commit_file("manual_config.json", manual_data)
 
         algo_data = load_json("algorithm_config.json", {"algorithms": [], "slot_algorithm_bind": {}})
         algo_data.setdefault("slot_algorithm_bind", {})[slot_id] = {
@@ -348,13 +355,12 @@ with c_publish:
             },
         }
         save_json("algorithm_config.json", algo_data)
-        ok2, msg2 = _github_commit_file("algorithm_config.json", algo_data)
+        _github_commit_file("algorithm_config.json", algo_data)
 
-        st.success(f"✅ 策略已发布！")
+        st.success("✅ 策略已发布！")
         st.rerun()
 
 st.markdown(
     f'<p class="footer-note">数据源: 外部坑位系统（{slot_source}） ｜ 配置目录: recommendation-demo/configs ｜ 今日: 2026-09-22</p>',
     unsafe_allow_html=True,
 )
-  
