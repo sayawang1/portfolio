@@ -1,4 +1,4 @@
-"""推荐系统运营后台 - 支持多组（产品+图标+跳转）"""
+"""推荐系统运营后台 - 图标 + 跳转链接（产品自动映射）"""
 import streamlit as st
 import os
 import json
@@ -8,7 +8,6 @@ import requests
 from datetime import datetime
 
 from data_providers.slot_provider import get_slots_with_source
-from data_providers.product_provider import get_products
 
 CONFIG_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -132,10 +131,6 @@ AUDIENCE_COND_MAP = {
 slot_list, slot_source = get_slots_with_source()
 slot_options = [s["slot_id"] for s in slot_list]
 
-# 产品列表
-products_all = get_products()
-product_options = [f"{row['product_id']} - {row['name']}" for _, row in products_all.iterrows()]
-
 # ========== 顶部：策略列表 ==========
 st.markdown("### 📋 已发布策略列表")
 manual_data = load_json("manual_config.json", {"manual_rules": []})
@@ -193,7 +188,7 @@ with col_right:
     st.markdown("### 算法策略")
     with st.container(border=True):
         model = st.selectbox("模型选择", MODEL_OPTIONS, index=0, key="algo_model")
-        top_k = st.number_input("召回数量 Top-K", min_value=10, max_value=1000, value=200, step=10)
+        top_k = st.number_input("召回数量 Top-K", min_value=10, max_value=200, value=200, step=10)
         algo_weight = st.slider("策略权重（与人工竞争用，0-100）", 0, 100, 65, 5)
 
         st.markdown("**AB 测试（作用于算法层）**")
@@ -226,42 +221,36 @@ with st.container(border=True):
         is_fallback = st.toggle("作为兜底配置（人工和算法都未命中时生效）", value=False)
     with c2:
         st.markdown("**生效条件**")
-        selected_conds = st.multiselect("已选条件", CONDITION_OPTIONS, default=CONDITION_OPTIONS)
+        st.multiselect("已选条件", CONDITION_OPTIONS, default=CONDITION_OPTIONS)
         st.markdown("**高级设置**")
-        selected_adv = st.multiselect("已选高级设置", ADV_OPTIONS, default=ADV_OPTIONS)
+        st.multiselect("已选高级设置", ADV_OPTIONS, default=ADV_OPTIONS)
 
-st.markdown("#### 🎯 人工推荐位配置（每条：产品 + 图标 + 跳转链接）")
+st.markdown("#### 🎯 人工推荐位配置（只需填图标 + 跳转链接，产品自动按顺序映射 P001、P002...）")
 
-# 用 session_state 管理动态条目
+# session_state 管理动态条目
 if "item_rows" not in st.session_state:
     st.session_state.item_rows = [
-        {"product": product_options[0] if product_options else "", "icon": "campaign_icon_1.png", "url": "https://app.example.com/product/1"},
-        {"product": product_options[1] if len(product_options) > 1 else "", "icon": "campaign_icon_2.png", "url": "https://app.example.com/product/2"},
-        {"product": product_options[2] if len(product_options) > 2 else "", "icon": "campaign_icon_3.png", "url": "https://app.example.com/product/3"},
+        {"icon": "campaign_icon_1.png", "url": "https://app.example.com/product/1"},
+        {"icon": "campaign_icon_2.png", "url": "https://app.example.com/product/2"},
+        {"icon": "campaign_icon_3.png", "url": "https://app.example.com/product/3"},
     ]
 
 with st.container(border=True):
     for i, row in enumerate(st.session_state.item_rows):
-        c1, c2, c3, c4 = st.columns([3, 3, 4, 1])
+        c1, c2, c3, c4 = st.columns([2, 4, 5, 1])
         with c1:
-            row["product"] = st.selectbox(
-                f"产品 {i+1}",
-                product_options,
-                index=product_options.index(row["product"]) if row["product"] in product_options else 0,
-                key=f"prod_{i}",
-            )
+            st.markdown(f"**第 {i+1} 条**<br><span style='color:#9CA3AF;font-size:12px;'>→ P{i+1:03d}</span>", unsafe_allow_html=True)
         with c2:
-            row["icon"] = st.text_input(f"图标 {i+1}", value=row["icon"], key=f"icon_{i}")
+            row["icon"] = st.text_input(f"图标 {i+1}", value=row["icon"], key=f"icon_{i}", label_visibility="collapsed")
         with c3:
-            row["url"] = st.text_input(f"跳转链接 {i+1}", value=row["url"], key=f"url_{i}")
+            row["url"] = st.text_input(f"跳转链接 {i+1}", value=row["url"], key=f"url_{i}", label_visibility="collapsed")
         with c4:
-            st.markdown("<br>", unsafe_allow_html=True)
             if st.button("❌", key=f"rm_{i}"):
                 st.session_state.item_rows.pop(i)
                 st.rerun()
 
     if st.button("➕ 添加一条"):
-        st.session_state.item_rows.append({"product": product_options[0] if product_options else "", "icon": "", "url": ""})
+        st.session_state.item_rows.append({"icon": "", "url": ""})
         st.rerun()
 
 st.divider()
@@ -299,12 +288,10 @@ with c_publish:
 
         base_cond = AUDIENCE_COND_MAP.get(base_audience, "")
 
-        # 组装 items：每条含 product_id + icon + jump_url
+        # 产品自动映射：第 1 条 → P001，第 2 条 → P002 ...
         items_payload = []
-        for row in st.session_state.item_rows:
-            if not row["product"]:
-                continue
-            pid = row["product"].split(" - ")[0].strip()
+        for idx, row in enumerate(st.session_state.item_rows):
+            pid = f"P{idx+1:03d}"
             items_payload.append({
                 "product_id": pid,
                 "icon": row["icon"],
@@ -357,4 +344,4 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-        
+  
