@@ -1,4 +1,16 @@
 {
   "algorithms": [],
-  "slot_algorithm_bind": {}
+  "slot_algorithm_bind": {
+    "app_home_banner": {
+      "algo_id": "item_cf",
+      "algo_weight": 65,
+      "base_condition": "",
+      "ab_test": {
+        "enabled": false,
+        "group_a_ratio": 100,
+        "group_a_algo": "item_cf",
+        "group_b_algo": "bytedance_ps"
+      }
+    }
+  }
 }
