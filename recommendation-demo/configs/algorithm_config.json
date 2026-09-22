@@ -24,6 +24,18 @@
         "group_a_algo": "item_cf",
         "group_b_algo": "bytedance_ps"
       }
+    },
+    "web_sidebar": {
+      "algo_id": "deepfm",
+      "algo_weight": 50,
+      "base_condition": "",
+      "require_registered": true,
+      "ab_test": {
+        "enabled": false,
+        "group_a_ratio": 100,
+        "group_a_algo": "item_cf",
+        "group_b_algo": "bytedance_ps"
+      }
     }
   }
 }
