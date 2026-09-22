@@ -271,6 +271,10 @@ st.markdown("""
     }
     .final-card h3 { margin: 0 0 8px 0; color: #FF4B4B; }
     .footer-note { color: #4B5563; font-size: 12px; }
+    .mock-note {
+        color: #6B7280; font-size: 12px; font-style: italic;
+        margin-top: 8px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -287,7 +291,7 @@ products_all, product_source = get_products_with_source()
 interactions_all, interaction_source = get_interactions_with_source(users_all, products_all)
 item_sim_all = build_item_similarity(interactions_all)
 
-# 用户选择器（无空行）
+# 用户选择器
 c_u1, c_u2, c_u3 = st.columns([2, 3, 3])
 with c_u1:
     selected_user_id = st.selectbox("👤 选择用户", users_all["user_id"].tolist(), index=0)
@@ -321,7 +325,7 @@ slot_id = slot_map[st.session_state.selected_slot_label]
 # 执行策略
 result = execute_strategy(slot_id, user_row, interactions_all, item_sim_all, products_all)
 
-# 只显示：策略来源 + 命中策略ID（不要权重、竞争）
+# 策略徽章（只显示来源 + 命中策略ID）
 st.markdown(
     f'<span class="cond-badge">策略来源: {result["source"]}</span>'
     f'<span class="cond-badge">命中策略: {result.get("strategy_id", "-")}</span>',
@@ -336,12 +340,16 @@ if result["source"] in ("manual", "fallback_manual"):
 
 st.markdown("---")
 
+# 展示逻辑
 items = result.get("items")
 if items is not None and len(items) > 0:
     is_single_slot = "banner" in slot_id.lower() or "banner" in st.session_state.selected_slot_label.lower()
 
     if is_single_slot:
+        # Banner：最终展示位 1 条 + 列表 4 条 = 总共 5 条
         final = items.iloc[0]
+        list_items = items.iloc[1:5]   # 去掉第 1 条（已经在最终展示位了），取 4 条
+
         st.markdown("### 🎯 最终展示位（唯一）")
         st.markdown(f"""
         <div class="final-card">
@@ -350,14 +358,29 @@ if items is not None and len(items) > 0:
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown("### 📋 推荐列表（候选池）")
-    for _, row in items.iterrows():
-        st.markdown(f"""
-        <div class="rec-card">
-            <h4>{row.get('name', row['product_id'])}</h4>
-            <div class="meta">类别：{row.get('category', '-')} ｜ 风险：R{row.get('risk_level', '-')} ｜ 热度：{row.get('popularity', '-')}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("### 📋 推荐列表（候选池）")
+        for _, row in list_items.iterrows():
+            st.markdown(f"""
+            <div class="rec-card">
+                <h4>{row.get('name', row['product_id'])}</h4>
+                <div class="meta">类别：{row.get('category', '-')} ｜ 风险：R{row.get('risk_level', '-')} ｜ 热度：{row.get('popularity', '-')}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown('<div class="mock-note">以上为模拟数据，当前仅展示前 5 条。</div>', unsafe_allow_html=True)
+    else:
+        # 非 Banner 坑位：列表最多 5 条
+        list_items = items.head(5)
+        st.markdown("### 📋 推荐列表")
+        for _, row in list_items.iterrows():
+            st.markdown(f"""
+            <div class="rec-card">
+                <h4>{row.get('name', row['product_id'])}</h4>
+                <div class="meta">类别：{row.get('category', '-')} ｜ 风险：R{row.get('risk_level', '-')} ｜ 热度：{row.get('popularity', '-')}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown('<div class="mock-note">以上为模拟数据，当前仅展示前 5 条。</div>', unsafe_allow_html=True)
 else:
     st.warning("该坑位暂未配置策略，请在运营后台配置后查看效果。")
 
