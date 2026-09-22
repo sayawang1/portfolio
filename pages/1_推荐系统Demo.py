@@ -1,4 +1,4 @@
-"""推荐系统 Demo - 深色前端展示"""
+"""推荐系统 Demo - 坑位高亮选中，数据在下方展示"""
 import streamlit as st
 import os
 import json
@@ -113,7 +113,6 @@ def get_manual_result(slot_id, user, products):
         if not _match_condition(user, rule.get("target_condition", "")):
             continue
 
-        # 兼容两种格式：旧格式（纯 ID 列表）和新格式（对象列表）
         raw_items = rule.get("items", [])
         enriched = []
         for it in raw_items:
@@ -132,11 +131,9 @@ def get_manual_result(slot_id, user, products):
         ids = [e["product_id"] for e in enriched]
         matched = products[products["product_id"].isin(ids)].copy()
         if len(matched) > 0:
-            # 把 icon 和 jump_url 挂回产品行
             meta_map = {e["product_id"]: e for e in enriched}
             matched["icon"] = matched["product_id"].map(lambda x: meta_map.get(x, {}).get("icon", ""))
             matched["jump_url"] = matched["product_id"].map(lambda x: meta_map.get(x, {}).get("jump_url", ""))
-
             return {
                 "source": "manual",
                 "strategy_name": rule.get("remark", "人工强干预"),
@@ -241,12 +238,23 @@ st.markdown("""
 <style>
     .stApp { background-color: #0B0E11; color: #E6E6E6; }
     h1, h2, h3, h4 { color: #FFFFFF !important; }
+
+    /* 普通按钮 */
     .stButton>button {
         background-color: #1C2228; color: #E6E6E6;
         border: 1px solid #2A323A; border-radius: 8px;
         padding: 10px 18px; font-weight: 500;
+        width: 100%;
     }
     .stButton>button:hover { border-color: #FF4B4B; color: #FF4B4B; }
+
+    /* 选中按钮（红色高亮） */
+    .slot-active .stButton>button {
+        background-color: #FF4B4B !important;
+        color: #FFFFFF !important;
+        border: 2px solid #FF4B4B !important;
+    }
+
     .cond-badge {
         display: inline-block; padding: 6px 14px; margin: 4px 6px 4px 0;
         background-color: #1F2937; color: #E6E6E6;
@@ -271,6 +279,12 @@ st.markdown("""
     .final-card h3 { margin: 0 0 8px 0; color: #FF4B4B; }
     .footer-note { color: #4B5563; font-size: 12px; }
     .mock-note { color: #6B7280; font-size: 12px; font-style: italic; margin-top: 8px; }
+    .no-data {
+        color: #6B7280; font-size: 14px;
+        background-color: #151A1F; border: 1px dashed #2A323A;
+        border-radius: 10px; padding: 40px; text-align: center;
+        margin-top: 20px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -286,6 +300,7 @@ products_all, product_source = get_products_with_source()
 interactions_all, interaction_source = get_interactions_with_source(users_all, products_all)
 item_sim_all = build_item_similarity(interactions_all)
 
+# ========== 用户选择 ==========
 c_u1, c_u2, c_u3 = st.columns([2, 3, 3])
 with c_u1:
     selected_user_id = st.selectbox("👤 选择用户", users_all["user_id"].tolist(), index=0)
@@ -295,22 +310,47 @@ with c_u2:
 with c_u3:
     st.markdown(f"**城市**：{user_row['city_tier']} ｜ **风险承受**：R{user_row['risk_tolerance']}")
 
+# ========== 坑位选择（高亮选中的） ==========
 slot_list, slot_source = get_slots_with_source()
-slot_map = {f"🎯 {s['slot_name']}": s["slot_id"] for s in slot_list}
-if not slot_map:
-    slot_map = {"📋 首页信息流": "app_home_feed"}
 
-btn_cols = st.columns(len(slot_map))
-if "selected_slot_label" not in st.session_state:
-    st.session_state.selected_slot_label = list(slot_map.keys())[0]
-for i, label in enumerate(slot_map.keys()):
+# 顺序固定：Banner → 信息流 → 侧边栏 → 广告层
+SLOT_ORDER = ["app_home_banner", "app_home_feed", "web_sidebar", "ad_layer"]
+SLOT_LABEL = {
+    "app_home_banner": "🎯 APP首页Banner",
+    "app_home_feed": "🎯 APP首页信息流",
+    "web_sidebar": "🎯 网页侧边栏",
+    "ad_layer": "🎯 广告层",
+}
+
+# 从 provider 拿到的 slot_list 里只保留有配置的坑位（按顺序）
+available_slots = [s["slot_id"] for s in slot_list]
+ordered_slots = [sid for sid in SLOT_ORDER if sid in available_slots]
+
+if not ordered_slots:
+    ordered_slots = SLOT_ORDER  # 兜底
+
+if "selected_slot_id" not in st.session_state:
+    st.session_state.selected_slot_id = ordered_slots[0]
+
+# 渲染坑位按钮
+btn_cols = st.columns(len(ordered_slots))
+for i, sid in enumerate(ordered_slots):
+    is_selected = (sid == st.session_state.selected_slot_id)
     with btn_cols[i]:
-        if st.button(label, use_container_width=True, key=f"slot_btn_{i}"):
-            st.session_state.selected_slot_label = label
+        if is_selected:
+            st.markdown('<div class="slot-active">', unsafe_allow_html=True)
+        if st.button(SLOT_LABEL.get(sid, sid), key=f"slot_btn_{sid}"):
+            st.session_state.selected_slot_id = sid
+            st.rerun()
+        if is_selected:
+            st.markdown('</div>', unsafe_allow_html=True)
 
-slot_id = slot_map[st.session_state.selected_slot_label]
+slot_id = st.session_state.selected_slot_id
+
+# ========== 执行策略 ==========
 result = execute_strategy(slot_id, user_row, interactions_all, item_sim_all, products_all)
 
+# ========== 策略 badge 展示在按钮下方 ==========
 st.markdown(
     f'<span class="cond-badge">策略来源: {result["source"]}</span>'
     f'<span class="cond-badge">命中策略: {result.get("strategy_id", "-")}</span>'
@@ -320,12 +360,13 @@ st.markdown(
 
 st.markdown("---")
 
+# ========== 展示内容 ==========
 merged_items = result.get("items")
 manual_items = result.get("manual_items")
 algo_items = result.get("algo_items")
 
 if merged_items is not None and len(merged_items) > 0:
-    is_single_slot = "banner" in slot_id.lower() or "banner" in st.session_state.selected_slot_label.lower()
+    is_single_slot = "banner" in slot_id.lower()
 
     if is_single_slot:
         final = merged_items.iloc[0]
@@ -335,8 +376,6 @@ if merged_items is not None and len(merged_items) > 0:
         <div class="final-card">
             <h3>{icon_html} 🏆 {final.get('name', final['product_id'])}</h3>
             <div style="color:#9CA3AF;">类别：{final.get('category', '-')} ｜ 风险：R{final.get('risk_level', '-')} ｜ 热度：{final.get('popularity', '-')}</div>
-            <div style="color:#6B7280;font-size:12px;margin-top:6px;">图标：{final.get('icon','-') or '（未配置）'}</div>
-            <div style="color:#6B7280;font-size:12px;">跳转：{final.get('jump_url','-') or '（未配置）'}</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -373,7 +412,10 @@ if merged_items is not None and len(merged_items) > 0:
         unsafe_allow_html=True,
     )
 else:
-    st.warning("该坑位暂未配置策略，请在运营后台配置后查看效果。")
+    st.markdown(
+        '<div class="no-data">该坑位暂未配置策略，请在运营后台配置后查看效果。</div>',
+        unsafe_allow_html=True,
+    )
 
 st.markdown(
     f'<p class="footer-note">数据源: 商品={product_source} ｜ 用户={user_source} ｜ 行为={interaction_source} ｜ 坑位={slot_source} ｜ 今日: 2026-09-22</p>',
