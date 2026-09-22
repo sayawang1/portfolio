@@ -43,6 +43,31 @@
       "end_time": "2026-09-30 23:59:59",
       "is_fallback": false,
       "remark": "继承基础客群 人工强推"
+    },
+    {
+      "rule_id": "rule_375761",
+      "slot_id": "web_sidebar",
+      "position_id": "p1",
+      "enabled": true,
+      "base_audience": "全量用户",
+      "base_condition": "",
+      "target_type": "tag",
+      "target_condition": "aum_level == '高'",
+      "audience_label": "高净值客户",
+      "items": [
+        {
+          "product_id": "P002",
+          "icon": "campaign_icon_2.png",
+          "jump_url": "https://app.example.com/product/2"
+        }
+      ],
+      "traffic_pct": 100,
+      "manual_weight": 80,
+      "algo_weight": 50,
+      "start_time": "2026-09-01 00:00:00",
+      "end_time": "2026-09-30 23:59:59",
+      "is_fallback": true,
+      "remark": "高净值客户 人工强推"
     }
   ]
 }
