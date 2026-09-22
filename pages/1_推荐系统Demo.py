@@ -421,3 +421,4 @@ st.markdown(
     f'<p class="footer-note">数据源: 商品={product_source} ｜ 用户={user_source} ｜ 行为={interaction_source} ｜ 坑位={slot_source} ｜ 今日: 2026-09-22</p>',
     unsafe_allow_html=True,
 )
+
