@@ -3,7 +3,7 @@
   "slot_algorithm_bind": {
     "app_home_banner": {
       "algo_id": "item_cf",
-      "algo_weight": 30,
+      "algo_weight": 65,
       "base_condition": "",
       "ab_test": {
         "enabled": false,
