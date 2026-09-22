@@ -14,7 +14,7 @@
     },
     "app_home_feed": {
       "algo_id": "item_cf",
-      "algo_weight": 75,
+      "algo_weight": 70,
       "base_condition": "",
       "ab_test": {
         "enabled": false,
