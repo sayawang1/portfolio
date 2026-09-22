@@ -17,53 +17,11 @@ CONFIG_DIR = os.path.join(
     "recommendation-demo", "configs",
 )
 
+# 把 recommendation-demo 加入 sys.path，方便 import recommender
+import sys
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "recommendation-demo"))
 
-def build_item_similarity(interactions):
-    from sklearn.metrics.pairwise import cosine_similarity
-    matrix = interactions.pivot_table(index="user_id", columns="product_id", values="rating", fill_value=0)
-    sim = cosine_similarity(matrix.T)
-    return pd.DataFrame(sim, index=matrix.columns, columns=matrix.columns)
-
-
-def recommend_by_algorithm(user_id, algo_type, interactions, item_sim, products, top_n=5):
-    if algo_type == "item_cf":
-        user_rated = interactions[interactions["user_id"] == user_id]["product_id"].tolist()
-        if not user_rated:
-            return products[products["status"] == "在售"].nlargest(top_n, "popularity")
-        scores = {}
-        for pid in products["product_id"]:
-            if pid in user_rated or pid not in item_sim.columns:
-                continue
-            sims = [item_sim.loc[pid, r] for r in user_rated if r in item_sim.columns]
-            if sims:
-                scores[pid] = float(np.mean(sorted(sims, reverse=True)[:5]))
-        top = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:top_n]
-        result = products[products["product_id"].isin([t[0] for t in top])].copy()
-        result["score"] = result["product_id"].map(dict(top))
-        return result.sort_values("score", ascending=False)
-    elif algo_type == "content_based":
-        user_rated = interactions[interactions["user_id"] == user_id]["product_id"].tolist()
-        liked_cats = interactions[
-            (interactions["user_id"] == user_id) & (interactions["rating"] >= 4)
-        ].merge(products[["product_id", "category"]], on="product_id")["category"].unique()
-        return products[
-            (products["category"].isin(liked_cats)) & (~products["product_id"].isin(user_rated))
-            & (products["status"] == "在售")
-        ].nlargest(top_n, "popularity")
-    elif algo_type == "bytedance_ps":
-        candidates = set()
-        hot = products[products["status"] == "在售"].nlargest(20, "popularity")
-        candidates.update(hot["product_id"].tolist())
-        user_r = interactions[interactions["user_id"] == user_id]
-        if not user_r.empty:
-            liked = user_r.merge(products[["product_id", "category"]], on="product_id", how="left")
-            for cat in liked["category"].dropna().unique():
-                cat_items = products[(products["category"] == cat) & (products["status"] == "在售")].head(10)
-                candidates.update(cat_items["product_id"].tolist())
-        cand_df = products[products["product_id"].isin(candidates)].copy()
-        return cand_df.sort_values("popularity", ascending=False).head(top_n)
-    else:
-        return products[products["status"] == "在售"].nlargest(top_n, "popularity")
+from recommender import recommend_by_algorithm, build_item_similarity
 
 
 def _match_condition(user, condition):
@@ -91,6 +49,7 @@ def _stable_hash_group(user_id, slot_id, group_a_ratio):
     return "A" if (h % 100) < group_a_ratio else "B"
 
 
+# ============ Layer 1: 人工强干预 ============
 def get_manual_result(slot_id, user, products):
     data_path = os.path.join(CONFIG_DIR, "manual_config.json")
     if not os.path.exists(data_path):
@@ -145,6 +104,7 @@ def get_manual_result(slot_id, user, products):
     return None
 
 
+# ============ Layer 2: 算法推荐 ============
 def get_algorithm_result(slot_id, user, interactions, item_sim, products):
     data_path = os.path.join(CONFIG_DIR, "algorithm_config.json")
     if not os.path.exists(data_path):
@@ -161,7 +121,7 @@ def get_algorithm_result(slot_id, user, interactions, item_sim, products):
     if not _match_condition(user, bind.get("base_condition", "")):
         return None
 
-    algo_id = bind.get("algo_id", "bytedance_ps")
+    algo_id = bind.get("algo_id", "item_cf")
     algo_weight = bind.get("algo_weight", 65)
     ab = bind.get("ab_test", {})
     ab_group = "-"
@@ -185,7 +145,58 @@ def get_algorithm_result(slot_id, user, interactions, item_sim, products):
     return None
 
 
+# ============ Layer 3: 兜底 ============
 def get_fallback_result(slot_id, user, products, interactions, item_sim):
+    # 3.1 先查人工兜底（is_fallback=True）
+    data_path = os.path.join(CONFIG_DIR, "manual_config.json")
+    if os.path.exists(data_path):
+        try:
+            with open(data_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            for rule in data.get("manual_rules", []):
+                if not rule.get("enabled") or not rule.get("is_fallback"):
+                    continue
+                if rule.get("slot_id") != slot_id:
+                    continue
+                if not _in_time_window(rule.get("start_time"), rule.get("end_time")):
+                    continue
+                if not _match_condition(user, rule.get("base_condition", "")):
+                    continue
+                if not _match_condition(user, rule.get("target_condition", "")):
+                    continue
+
+                raw_items = rule.get("items", [])
+                enriched = []
+                for it in raw_items:
+                    if isinstance(it, str):
+                        enriched.append({"product_id": it, "icon": "", "jump_url": ""})
+                    elif isinstance(it, dict):
+                        enriched.append({
+                            "product_id": it.get("product_id", ""),
+                            "icon": it.get("icon", ""),
+                            "jump_url": it.get("jump_url", ""),
+                        })
+
+                if not enriched:
+                    continue
+                ids = [e["product_id"] for e in enriched]
+                matched = products[products["product_id"].isin(ids)].copy()
+                if len(matched) > 0:
+                    meta_map = {e["product_id"]: e for e in enriched}
+                    matched["icon"] = matched["product_id"].map(lambda x: meta_map.get(x, {}).get("icon", ""))
+                    matched["jump_url"] = matched["product_id"].map(lambda x: meta_map.get(x, {}).get("jump_url", ""))
+                    return {
+                        "source": "fallback_manual",
+                        "strategy_name": "人工兜底",
+                        "strategy_id": rule.get("rule_id", "-"),
+                        "weight": rule.get("manual_weight", 0),
+                        "items": matched,
+                        "audience": rule.get("audience_label", "-"),
+                    }
+        except Exception:
+            pass
+
+    # 3.2 系统兜底（热门，代码写死）
     items = recommend_by_algorithm(user["user_id"], "popularity", interactions, item_sim, products, top_n=5)
     items = items.copy()
     items["icon"] = ""
@@ -207,6 +218,7 @@ def _merge_manual_algo(manual_items, algo_items, total=5):
     return pd.DataFrame(merged)
 
 
+# ============ 统一决策入口 ============
 def execute_strategy(slot_id, user, interactions, item_sim, products):
     manual = get_manual_result(slot_id, user, products)
     algo = get_algorithm_result(slot_id, user, interactions, item_sim, products)
@@ -232,6 +244,7 @@ def execute_strategy(slot_id, user, interactions, item_sim, products):
         return {**fallback, "manual_items": pd.DataFrame(), "algo_items": fallback["items"], "competition": "均未命中 → 兜底"}
 
 
+# ============ 页面 ============
 st.set_page_config(page_title="推荐系统 Demo", page_icon="🛒", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
@@ -321,9 +334,11 @@ if selected_user_id:
 
 with c_u2:
     if user_row is not None:
-        st.markdown(f"**VIP**：{'✅ 是' if user_row['is_vip'] == 1 else '❌ 否'} ｜ **资产等级**：{user_row['aum_level']}")
+        type_label = {"vip": "VIP 会员", "registered": "注册用户", "guest": "非注册用户"}.get(user_row.get("user_type", ""), "-")
+        vip_label = "✅ 是" if user_row['is_vip'] == 1 else "❌ 否"
+        st.markdown(f"**类型**：{type_label} ｜ **VIP**：{vip_label} ｜ **资产等级**：{user_row['aum_level']}")
     else:
-        st.markdown("**VIP**：- ｜ **资产等级**：-")
+        st.markdown("**类型**：- ｜ **VIP**：- ｜ **资产等级**：-")
 with c_u3:
     if user_row is not None:
         st.markdown(f"**城市**：{user_row['city_tier']} ｜ **风险承受**：R{user_row['risk_tolerance']}")
@@ -349,7 +364,6 @@ if not ordered_slots:
 if "selected_slot_id" not in st.session_state:
     st.session_state.selected_slot_id = ""
 
-# 固定 4 列
 btn_cols = st.columns(4)
 for i, sid in enumerate(ordered_slots):
     is_selected = (sid == st.session_state.selected_slot_id)
@@ -378,9 +392,32 @@ if not show_data:
 else:
     result = execute_strategy(slot_id, user_row, interactions_all, item_sim_all, products_all)
 
+    # ========== 策略 badge（中文化 + 模型一一对应） ==========
+    source_map = {
+        "manual": "✋ 人工强干预",
+        "algorithm": "🤖 算法推荐",
+        "fallback_manual": "🛟 人工兜底",
+        "fallback_algorithm": "🛟 兜底（热门）",
+    }
+    source_label = source_map.get(result["source"], result["source"])
+
+    sid = result.get("strategy_id", "-")
+    algo_name_map = {
+        "algo_deepfm": "DeepFM v3（精排）",
+        "algo_dssm": "双塔召回（DSSM）",
+        "algo_bytedance_ps": "字节千人千面",
+        "algo_item_cf": "协同过滤 ItemCF",
+        "algo_content_based": "内容召回 ContentBased",
+        "algo_popularity": "兜底（热门）",
+    }
+    if sid.startswith("rule_"):
+        algo_label = f"人工规则 {sid}"
+    else:
+        algo_label = algo_name_map.get(sid, sid)
+
     st.markdown(
-        f'<span class="cond-badge">策略来源: {result["source"]}</span>'
-        f'<span class="cond-badge">命中策略: {result.get("strategy_id", "-")}</span>'
+        f'<span class="cond-badge">策略来源: {source_label}</span>'
+        f'<span class="cond-badge">命中: {algo_label}</span>'
         f'<span class="cond-badge">竞争: {result.get("competition", "-")}</span>',
         unsafe_allow_html=True,
     )
