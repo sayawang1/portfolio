@@ -14,9 +14,10 @@
       }
     },
     "app_home_feed": {
-      "algo_id": "bytedance_ps",
+      "algo_id": "dssm",
       "algo_weight": 100,
       "base_condition": "",
+      "require_registered": true,
       "ab_test": {
         "enabled": false,
         "group_a_ratio": 100,
