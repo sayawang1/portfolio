@@ -4,26 +4,60 @@ import streamlit as st
 
 # 1. 页面基本设置
 st.set_page_config(
-    page_title="推荐系统Demo",
+    page_title="推荐系统运营后台",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# 2. 注入 CSS：彻底隐藏左侧导航栏，并强制背景深色
+# 2. 注入 CSS：隐藏原生侧边栏 + 深色背景 + 导航栏美化
 st.markdown("""
 <style>
-    /* 隐藏自带的侧边栏及其导航 */
+    /* 隐藏原生侧边栏及其导航 */
     [data-testid="stSidebar"] { display: none !important; }
     [data-testid="stSidebarNav"] { display: none !important; }
     
     /* 强制页面背景色与首页一致 */
     .stApp { background-color: #0B0E11 !important; }
+    
+    /* 导航栏按钮美化 */
+    div[data-testid="stButton"] > button {
+        border-radius: 20px !important;
+        border: 1px solid transparent !important;
+        background-color: transparent !important;
+        color: #A0A6B1 !important;
+        font-weight: 600 !important;
+        transition: all 0.3s ease !important;
+        padding: 8px 24px !important;
+    }
+    div[data-testid="stButton"] > button:hover {
+        background-color: #2A2F3A !important;
+        color: #FFFFFF !important;
+        border-color: #3A404D !important;
+    }
+    div[data-testid="stButton"] > button[kind="primary"] {
+        background-color: #FF4B4B !important;
+        color: #FFFFFF !important;
+        box-shadow: 0 4px 10px rgba(255, 75, 75, 0.3) !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# === 下面是你原本页面的代码 ===
-# st.title("📈 推荐系统·选品 & 效果预览")
-# ...
+# 3. 顶部导航栏（只有两个菜单：Demo 和 运营后台）
+nav_col1, nav_col2, nav_col3 = st.columns([1.2, 1.5, 8])
+
+with nav_col1:
+    if st.button("🧪 推荐系统 Demo", use_container_width=True):
+        st.switch_page("pages/1_推荐系统Demo.py")
+
+with nav_col2:
+    # 当前在运营后台页面，所以后台按钮高亮（type="primary"）
+    if st.button("⚙️ 推荐系统运营后台", use_container_width=True, type="primary"):
+        pass # 当前页面，无需跳转
+
+# ==========================================
+# 下面是你原本页面的代码（不要动，直接接在下面）
+# 比如你之前的后台配置逻辑
+# ==========================================
 import os
 import json
 import uuid
