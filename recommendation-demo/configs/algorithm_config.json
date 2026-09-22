@@ -3,7 +3,7 @@
   "slot_algorithm_bind": {
     "app_home_banner": {
       "algo_id": "bytedance_ps",
-      "algo_weight": 60,
+      "algo_weight": 40,
       "base_condition": "",
       "require_registered": false,
       "ab_test": {
