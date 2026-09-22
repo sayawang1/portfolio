@@ -1,4 +1,4 @@
-"""推荐系统 Demo - 坑位高亮 + session 持久化"""
+"""推荐系统 Demo - 深色 + 高亮选中"""
 import streamlit as st
 import os
 import json
@@ -239,18 +239,16 @@ st.markdown("""
     .stApp { background-color: #0B0E11; color: #E6E6E6; }
     h1, h2, h3, h4 { color: #FFFFFF !important; }
 
-    /* 坑位按钮：加宽、等高 */
-    div[data-testid="column"] .stButton>button {
+    /* 坑位按钮：默认深色 */
+    .stButton>button {
         background-color: #1C2228; color: #E6E6E6;
         border: 1px solid #2A323A; border-radius: 10px;
         padding: 14px 20px; font-weight: 500;
         width: 100%; font-size: 15px;
     }
-    div[data-testid="column"] .stButton>button:hover {
-        border-color: #FF4B4B; color: #FF4B4B;
-    }
+    .stButton>button:hover { border-color: #FF4B4B; color: #FF4B4B; }
 
-    /* 高亮的坑位：用主按钮样式覆盖 */
+    /* 高亮的坑位：红色背景 */
     .slot-active .stButton>button {
         background-color: #FF4B4B !important;
         color: #FFFFFF !important;
@@ -351,21 +349,21 @@ if not ordered_slots:
 if "selected_slot_id" not in st.session_state:
     st.session_state.selected_slot_id = ""
 
-# 一行 4 个坑位按钮（固定 4 列）
+# 固定 4 列
 btn_cols = st.columns(4)
 for i, sid in enumerate(ordered_slots):
     is_selected = (sid == st.session_state.selected_slot_id)
     with btn_cols[i]:
         if is_selected:
             st.markdown('<div class="slot-active">', unsafe_allow_html=True)
-        if st.button(SLOT_LABEL.get(sid, sid), key=f"slot_btn_{sid}"):
-            if is_selected:
+            if st.button(SLOT_LABEL.get(sid, sid), key=f"slot_btn_{sid}"):
                 st.session_state.selected_slot_id = ""
-            else:
-                st.session_state.selected_slot_id = sid
-            st.rerun()
-        if is_selected:
+                st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
+        else:
+            if st.button(SLOT_LABEL.get(sid, sid), key=f"slot_btn_{sid}"):
+                st.session_state.selected_slot_id = sid
+                st.rerun()
 
 slot_id = st.session_state.selected_slot_id
 
