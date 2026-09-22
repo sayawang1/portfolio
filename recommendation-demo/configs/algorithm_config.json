@@ -11,6 +11,17 @@
         "group_a_algo": "item_cf",
         "group_b_algo": "bytedance_ps"
       }
+    },
+    "app_home_feed": {
+      "algo_id": "item_cf",
+      "algo_weight": 75,
+      "base_condition": "",
+      "ab_test": {
+        "enabled": false,
+        "group_a_ratio": 100,
+        "group_a_algo": "item_cf",
+        "group_b_algo": "bytedance_ps"
+      }
     }
   }
 }
