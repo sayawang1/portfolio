@@ -13,7 +13,7 @@
       }
     },
     "app_home_feed": {
-      "algo_id": "item_cf",
+      "algo_id": "dssm",
       "algo_weight": 100,
       "base_condition": "",
       "ab_test": {
