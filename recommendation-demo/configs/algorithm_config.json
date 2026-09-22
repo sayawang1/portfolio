@@ -1,28 +1,4 @@
 {
-  "algorithms": [
-    {"algo_id": "item_cf",       "algo_name": "协同过滤",     "enabled": true, "type": "item_cf"},
-    {"algo_id": "content_based", "algo_name": "内容召回",     "enabled": true, "type": "content_based"},
-    {"algo_id": "popularity",    "algo_name": "热门排序",     "enabled": true, "type": "popularity"},
-    {"algo_id": "bytedance_ps",  "algo_name": "字节千人千面", "enabled": true, "type": "bytedance_ps",
-     "params": {"recall_num": 200, "rank_num": 20}}
-  ],
-  "slot_algorithm_bind": {
-    "app_home_feed": {
-      "algo_id": "bytedance_ps",
-      "ab_test": {
-        "enabled": true,
-        "group_a_ratio": 50,
-        "group_a_algo": "item_cf",
-        "group_b_algo": "bytedance_ps"
-      }
-    },
-    "app_home_banner": {
-      "algo_id": "popularity",
-      "ab_test": {"enabled": false}
-    },
-    "web_sidebar": {
-      "algo_id": "content_based",
-      "ab_test": {"enabled": false}
-    }
-  }
+  "algorithms": [],
+  "slot_algorithm_bind": {}
 }
