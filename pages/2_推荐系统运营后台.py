@@ -1,4 +1,4 @@
-"""推荐系统运营后台 - 图标+跳转下拉选择"""
+"""推荐系统运营后台 - 保持原布局，只把图标/跳转改成下拉"""
 import streamlit as st
 import os
 import json
@@ -19,15 +19,13 @@ GITHUB_REPO = "sayawang1/portfolio"
 GITHUB_BRANCH = "main"
 CONFIG_REPO_PATH = "recommendation-demo/configs"
 
-# ========== 下拉候选（模拟真实系统接口返回的候选列表） ==========
+# ========== 下拉候选：模拟真实系统返回的图标 & 跳转链接 ==========
 ICON_OPTIONS = [
     "campaign_icon_1.png",
     "campaign_icon_2.png",
     "campaign_icon_3.png",
     "campaign_icon_4.png",
     "campaign_icon_5.png",
-    "promo_banner_a.png",
-    "promo_banner_b.png",
 ]
 
 URL_OPTIONS = [
@@ -36,8 +34,6 @@ URL_OPTIONS = [
     "https://app.example.com/product/3",
     "https://app.example.com/product/4",
     "https://app.example.com/product/5",
-    "https://app.example.com/promo/2026q3",
-    "https://app.example.com/promo/2026q4",
 ]
 
 
@@ -67,7 +63,7 @@ def _github_commit_file(filename, content_dict):
         payload["sha"] = sha
     try:
         r = requests.put(url, headers=headers, json=payload, timeout=10)
-        return (True, "已提交到 GitHub") if r.status_code in (200, 201) else (False, f"HTTP {r.status_code}")
+        return (True, "已提交") if r.status_code in (200, 201) else (False, f"HTTP {r.status_code}")
     except Exception as e:
         return False, f"异常: {str(e)}"
 
@@ -202,6 +198,7 @@ with col_right:
         st.number_input("召回数量 Top-K", min_value=10, max_value=200, value=200, step=10)
         algo_weight = st.slider("策略权重（与人工竞争用，0-100）", 0, 100, 65, 5)
 
+        st.markdown("**AB 测试（作用于算法层）**")
         ab_enabled = st.toggle("启用 AB 测试", value=False)
         group_a = 70
         ab_group_a_algo = "协同过滤 ItemCF"
@@ -222,58 +219,32 @@ with st.container(border=True):
     c1, c2 = st.columns(2)
     with c1:
         manual_audiences = st.multiselect(
-            "人工客群",
+            "人工客群（可多选，AND 关系；不选则继承基础客群）",
             AUDIENCE_OPTIONS,
             default=["精准·VIP会员"],
             key="manual_audience",
+        )
+        # 下拉选择图标（多选，按顺序映射 P001、P002...）
+        icon_selected = st.multiselect(
+            "图标展示",
+            ICON_OPTIONS,
+            default=ICON_OPTIONS[:1],
+            key="icon_select",
+        )
+        # 下拉选择跳转链接（多选，与图标一一对应）
+        url_selected = st.multiselect(
+            "跳转链接",
+            URL_OPTIONS,
+            default=URL_OPTIONS[:1],
+            key="url_select",
         )
         manual_weight = st.slider("人工权重（与算法竞争用，0-100）", 0, 100, 80, 5)
         is_fallback = st.toggle("作为兜底配置", value=False)
     with c2:
         st.markdown("**生效条件**")
-        st.multiselect("条件", CONDITION_OPTIONS, default=CONDITION_OPTIONS, label_visibility="collapsed")
+        st.multiselect("已选条件", CONDITION_OPTIONS, default=CONDITION_OPTIONS, label_visibility="collapsed")
         st.markdown("**高级设置**")
-        st.multiselect("设置", ADV_OPTIONS, default=ADV_OPTIONS, label_visibility="collapsed")
-
-# ========== 人工推荐位配置（下拉选择） ==========
-st.markdown("#### 🎯 人工推荐位配置")
-
-if "item_rows" not in st.session_state:
-    st.session_state.item_rows = [
-        {"icon": ICON_OPTIONS[0], "url": URL_OPTIONS[0]},
-        {"icon": ICON_OPTIONS[1], "url": URL_OPTIONS[1]},
-        {"icon": ICON_OPTIONS[2], "url": URL_OPTIONS[2]},
-    ]
-
-with st.container(border=True):
-    for i, row in enumerate(st.session_state.item_rows):
-        c1, c2, c3, c4 = st.columns([1, 4, 4, 0.6])
-        with c1:
-            st.markdown(f"**第 {i+1} 条**<br><span style='color:#9CA3AF;font-size:12px;'>→ P{i+1:03d}</span>", unsafe_allow_html=True)
-        with c2:
-            row["icon"] = st.selectbox(
-                f"图标 {i+1}",
-                ICON_OPTIONS,
-                index=ICON_OPTIONS.index(row["icon"]) if row["icon"] in ICON_OPTIONS else 0,
-                key=f"icon_{i}",
-                label_visibility="collapsed",
-            )
-        with c3:
-            row["url"] = st.selectbox(
-                f"跳转链接 {i+1}",
-                URL_OPTIONS,
-                index=URL_OPTIONS.index(row["url"]) if row["url"] in URL_OPTIONS else 0,
-                key=f"url_{i}",
-                label_visibility="collapsed",
-            )
-        with c4:
-            if st.button("❌", key=f"rm_{i}"):
-                st.session_state.item_rows.pop(i)
-                st.rerun()
-
-    if st.button("➕ 添加一条"):
-        st.session_state.item_rows.append({"icon": ICON_OPTIONS[0], "url": URL_OPTIONS[0]})
-        st.rerun()
+        st.multiselect("已选高级设置", ADV_OPTIONS, default=ADV_OPTIONS, label_visibility="collapsed")
 
 st.divider()
 
@@ -310,13 +281,17 @@ with c_publish:
 
         base_cond = AUDIENCE_COND_MAP.get(base_audience, "")
 
+        # 产品自动映射：第 1 个图标 + 第 1 个链接 → P001，依此类推
         items_payload = []
-        for idx, row in enumerate(st.session_state.item_rows):
+        max_len = max(len(icon_selected), len(url_selected))
+        for idx in range(max_len):
             pid = f"P{idx+1:03d}"
+            icon = icon_selected[idx] if idx < len(icon_selected) else ""
+            url = url_selected[idx] if idx < len(url_selected) else ""
             items_payload.append({
                 "product_id": pid,
-                "icon": row["icon"],
-                "jump_url": row["url"],
+                "icon": icon,
+                "jump_url": url,
             })
 
         manual_data = load_json("manual_config.json", {"manual_rules": []})
