@@ -48,6 +48,43 @@ def _stable_hash_group(user_id, slot_id, group_a_ratio):
     return "A" if (h % 100) < group_a_ratio else "B"
 
 
+# ============ 构造人工结果 ============
+def _build_manual_result(rule, products):
+    raw_items = rule.get("items", [])
+    enriched = []
+    for it in raw_items:
+        if isinstance(it, str):
+            enriched.append({"product_id": it, "icon": "", "jump_url": ""})
+        elif isinstance(it, dict):
+            enriched.append({
+                "product_id": it.get("product_id", ""),
+                "icon": it.get("icon", ""),
+                "jump_url": it.get("jump_url", ""),
+            })
+
+    if not enriched:
+        return None
+
+    ids = [e["product_id"] for e in enriched]
+    matched = products[products["product_id"].isin(ids)].copy()
+    if len(matched) == 0:
+        return None
+
+    meta_map = {e["product_id"]: e for e in enriched}
+    matched["icon"] = matched["product_id"].map(lambda x: meta_map.get(x, {}).get("icon", ""))
+    matched["jump_url"] = matched["product_id"].map(lambda x: meta_map.get(x, {}).get("jump_url", ""))
+
+    return {
+        "source": "manual",
+        "strategy_name": rule.get("remark", "人工强干预"),
+        "strategy_id": rule.get("rule_id", "-"),
+        "weight": rule.get("manual_weight", 80),
+        "items": matched,
+        "audience": rule.get("audience_label", "-"),
+    }
+
+
+# ============ Layer 1: 人工强干预 ============
 def get_manual_result(slot_id, user, products):
     data_path = os.path.join(CONFIG_DIR, "manual_config.json")
     if not os.path.exists(data_path):
@@ -58,8 +95,11 @@ def get_manual_result(slot_id, user, products):
     except Exception:
         return None
 
+    non_fallback = []
+    fallback = []
+
     for rule in data.get("manual_rules", []):
-        if not rule.get("enabled") or rule.get("is_fallback"):
+        if not rule.get("enabled"):
             continue
         if rule.get("slot_id") != slot_id:
             continue
@@ -70,38 +110,27 @@ def get_manual_result(slot_id, user, products):
         if not _match_condition(user, rule.get("target_condition", "")):
             continue
 
-        raw_items = rule.get("items", [])
-        enriched = []
-        for it in raw_items:
-            if isinstance(it, str):
-                enriched.append({"product_id": it, "icon": "", "jump_url": ""})
-            elif isinstance(it, dict):
-                enriched.append({
-                    "product_id": it.get("product_id", ""),
-                    "icon": it.get("icon", ""),
-                    "jump_url": it.get("jump_url", ""),
-                })
+        if rule.get("is_fallback"):
+            fallback.append(rule)
+        else:
+            non_fallback.append(rule)
 
-        if not enriched:
-            continue
+    # 先看非兜底规则（优先级最高）
+    for rule in non_fallback:
+        result = _build_manual_result(rule, products)
+        if result:
+            return result
 
-        ids = [e["product_id"] for e in enriched]
-        matched = products[products["product_id"].isin(ids)].copy()
-        if len(matched) > 0:
-            meta_map = {e["product_id"]: e for e in enriched}
-            matched["icon"] = matched["product_id"].map(lambda x: meta_map.get(x, {}).get("icon", ""))
-            matched["jump_url"] = matched["product_id"].map(lambda x: meta_map.get(x, {}).get("jump_url", ""))
-            return {
-                "source": "manual",
-                "strategy_name": rule.get("remark", "人工强干预"),
-                "strategy_id": rule.get("rule_id", "-"),
-                "weight": rule.get("manual_weight", 80),
-                "items": matched,
-                "audience": rule.get("audience_label", "-"),
-            }
+    # 再看兜底规则（也参与 Layer 1，优先级低于非兜底）
+    for rule in fallback:
+        result = _build_manual_result(rule, products)
+        if result:
+            return result
+
     return None
 
 
+# ============ Layer 2: 算法推荐 ============
 def get_algorithm_result(slot_id, user, interactions, item_sim, products):
     data_path = os.path.join(CONFIG_DIR, "algorithm_config.json")
     if not os.path.exists(data_path):
@@ -118,7 +147,7 @@ def get_algorithm_result(slot_id, user, interactions, item_sim, products):
     if not _match_condition(user, bind.get("base_condition", "")):
         return None
 
-    # ⭐ 只对注册用户生效
+    # 只对注册用户生效
     if bind.get("require_registered") and not user.get("is_registered", 1):
         return None
 
@@ -146,7 +175,9 @@ def get_algorithm_result(slot_id, user, interactions, item_sim, products):
     return None
 
 
+# ============ Layer 3: 兜底 ============
 def get_fallback_result(slot_id, user, products, interactions, item_sim):
+    # 3.1 先查人工兜底（is_fallback=True）
     data_path = os.path.join(CONFIG_DIR, "manual_config.json")
     if os.path.exists(data_path):
         try:
@@ -164,37 +195,15 @@ def get_fallback_result(slot_id, user, products, interactions, item_sim):
                 if not _match_condition(user, rule.get("target_condition", "")):
                     continue
 
-                raw_items = rule.get("items", [])
-                enriched = []
-                for it in raw_items:
-                    if isinstance(it, str):
-                        enriched.append({"product_id": it, "icon": "", "jump_url": ""})
-                    elif isinstance(it, dict):
-                        enriched.append({
-                            "product_id": it.get("product_id", ""),
-                            "icon": it.get("icon", ""),
-                            "jump_url": it.get("jump_url", ""),
-                        })
-
-                if not enriched:
-                    continue
-                ids = [e["product_id"] for e in enriched]
-                matched = products[products["product_id"].isin(ids)].copy()
-                if len(matched) > 0:
-                    meta_map = {e["product_id"]: e for e in enriched}
-                    matched["icon"] = matched["product_id"].map(lambda x: meta_map.get(x, {}).get("icon", ""))
-                    matched["jump_url"] = matched["product_id"].map(lambda x: meta_map.get(x, {}).get("jump_url", ""))
-                    return {
-                        "source": "fallback_manual",
-                        "strategy_name": "人工兜底",
-                        "strategy_id": rule.get("rule_id", "-"),
-                        "weight": rule.get("manual_weight", 0),
-                        "items": matched,
-                        "audience": rule.get("audience_label", "-"),
-                    }
+                result = _build_manual_result(rule, products)
+                if result:
+                    result["source"] = "fallback_manual"
+                    result["strategy_name"] = "人工兜底"
+                    return result
         except Exception:
             pass
 
+    # 3.2 系统兜底（热门）
     items = recommend_by_algorithm(user["user_id"], "popularity", interactions, item_sim, products, top_n=5)
     items = items.copy()
     items["icon"] = ""
@@ -216,6 +225,7 @@ def _merge_manual_algo(manual_items, algo_items, total=5):
     return pd.DataFrame(merged)
 
 
+# ============ 统一决策入口 ============
 def execute_strategy(slot_id, user, interactions, item_sim, products):
     manual = get_manual_result(slot_id, user, products)
     algo = get_algorithm_result(slot_id, user, interactions, item_sim, products)
@@ -241,6 +251,7 @@ def execute_strategy(slot_id, user, interactions, item_sim, products):
         return {**fallback, "manual_items": pd.DataFrame(), "algo_items": fallback["items"], "competition": "均未命中 → 兜底"}
 
 
+# ============ 页面 ============
 st.set_page_config(page_title="推荐系统 Demo", page_icon="🛒", layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""
