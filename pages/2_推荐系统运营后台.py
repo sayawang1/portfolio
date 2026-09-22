@@ -1,4 +1,4 @@
-"""推荐系统运营后台 - 图标 + 跳转链接（产品自动映射）"""
+"""推荐系统运营后台 - 图标+跳转下拉选择"""
 import streamlit as st
 import os
 import json
@@ -19,6 +19,23 @@ GITHUB_REPO = "sayawang1/portfolio"
 GITHUB_BRANCH = "main"
 CONFIG_REPO_PATH = "recommendation-demo/configs"
 
+# 图标和跳转链接的候选（模拟真实系统的下拉数据源）
+ICON_OPTIONS = [
+    "campaign_icon_1.png",
+    "campaign_icon_2.png",
+    "campaign_icon_3.png",
+    "campaign_icon_4.png",
+    "campaign_icon_5.png",
+]
+
+URL_OPTIONS = [
+    "https://app.example.com/product/1",
+    "https://app.example.com/product/2",
+    "https://app.example.com/product/3",
+    "https://app.example.com/product/4",
+    "https://app.example.com/product/5",
+]
+
 
 def _get_github_token():
     try:
@@ -30,7 +47,7 @@ def _get_github_token():
 def _github_commit_file(filename, content_dict):
     token = _get_github_token()
     if not token:
-        return False, "未配置 GITHUB_TOKEN，仅保存在本地"
+        return False, "未配置 GITHUB_TOKEN"
     path = f"{CONFIG_REPO_PATH}/{filename}"
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}"
     headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
@@ -41,17 +58,14 @@ def _github_commit_file(filename, content_dict):
         sha = None
     content_str = json.dumps(content_dict, ensure_ascii=False, indent=2)
     content_b64 = base64.b64encode(content_str.encode("utf-8")).decode("utf-8")
-    payload = {"message": f"update {filename} via 运营后台", "content": content_b64, "branch": GITHUB_BRANCH}
+    payload = {"message": f"update {filename}", "content": content_b64, "branch": GITHUB_BRANCH}
     if sha:
         payload["sha"] = sha
     try:
         r = requests.put(url, headers=headers, json=payload, timeout=10)
-        if r.status_code in (200, 201):
-            return True, "已提交到 GitHub"
-        else:
-            return False, f"GitHub API 返回 {r.status_code}"
+        return (True, "已提交到 GitHub") if r.status_code in (200, 201) else (False, f"HTTP {r.status_code}")
     except Exception as e:
-        return False, f"GitHub 提交异常: {str(e)}"
+        return False, f"异常: {str(e)}"
 
 
 def load_json(filename, default=None):
@@ -101,11 +115,6 @@ st.markdown("""
         border: none; border-radius: 8px; padding: 8px 20px; font-weight: 600;
     }
     .stButton>button:hover { background-color: #E03E3E; }
-    .badge {
-        display: inline-block; padding: 3px 10px; margin: 3px 6px 3px 0;
-        background-color: #1F2937; color: #9CA3AF;
-        border-radius: 10px; font-size: 12px;
-    }
     .footer-note { color: #6B7280; font-size: 12px; }
 </style>
 """, unsafe_allow_html=True)
@@ -149,15 +158,13 @@ if rules:
             with c4:
                 st.markdown(f"人工权重: **{rule.get('manual_weight', '-')}**")
             with c5:
-                fb = "是" if rule.get("is_fallback") else "否"
-                st.markdown(f"兜底: {fb}")
+                st.markdown(f"兜底: {'是' if rule.get('is_fallback') else '否'}")
             with c6:
                 if st.button("🗑️ 删除", key=f"del_{idx}"):
                     rules.pop(idx)
                     manual_data["manual_rules"] = rules
                     save_json("manual_config.json", manual_data)
                     ok, msg = _github_commit_file("manual_config.json", manual_data)
-                    st.success(f"已删除，{msg}")
                     st.rerun()
 else:
     st.info("暂无已发布策略。")
@@ -191,7 +198,6 @@ with col_right:
         top_k = st.number_input("召回数量 Top-K", min_value=10, max_value=200, value=200, step=10)
         algo_weight = st.slider("策略权重（与人工竞争用，0-100）", 0, 100, 65, 5)
 
-        st.markdown("**AB 测试（作用于算法层）**")
         ab_enabled = st.toggle("启用 AB 测试", value=False)
         group_a = 70
         ab_group_a_algo = "协同过滤 ItemCF"
@@ -212,22 +218,21 @@ with st.container(border=True):
     c1, c2 = st.columns(2)
     with c1:
         manual_audiences = st.multiselect(
-            "人工客群（可多选，AND 关系；不选则继承基础客群）",
+            "人工客群",
             AUDIENCE_OPTIONS,
             default=["精准·VIP会员"],
             key="manual_audience",
         )
         manual_weight = st.slider("人工权重（与算法竞争用，0-100）", 0, 100, 80, 5)
-        is_fallback = st.toggle("作为兜底配置（人工和算法都未命中时生效）", value=False)
+        is_fallback = st.toggle("作为兜底配置", value=False)
     with c2:
         st.markdown("**生效条件**")
-        st.multiselect("已选条件", CONDITION_OPTIONS, default=CONDITION_OPTIONS)
+        st.multiselect("已选条件", CONDITION_OPTIONS, default=CONDITION_OPTIONS, label_visibility="collapsed")
         st.markdown("**高级设置**")
-        st.multiselect("已选高级设置", ADV_OPTIONS, default=ADV_OPTIONS)
+        st.multiselect("已选高级设置", ADV_OPTIONS, default=ADV_OPTIONS, label_visibility="collapsed")
 
-st.markdown("#### 🎯 人工推荐位配置（只需填图标 + 跳转链接，产品自动按顺序映射 P001、P002...）")
+st.markdown("#### 🎯 人工推荐位配置")
 
-# session_state 管理动态条目
 if "item_rows" not in st.session_state:
     st.session_state.item_rows = [
         {"icon": "campaign_icon_1.png", "url": "https://app.example.com/product/1"},
@@ -237,21 +242,31 @@ if "item_rows" not in st.session_state:
 
 with st.container(border=True):
     for i, row in enumerate(st.session_state.item_rows):
-        c1, c2, c3, c4 = st.columns([2, 4, 5, 1])
+        c1, c2, c3 = st.columns([1, 4, 4])
         with c1:
             st.markdown(f"**第 {i+1} 条**<br><span style='color:#9CA3AF;font-size:12px;'>→ P{i+1:03d}</span>", unsafe_allow_html=True)
         with c2:
-            row["icon"] = st.text_input(f"图标 {i+1}", value=row["icon"], key=f"icon_{i}", label_visibility="collapsed")
+            row["icon"] = st.selectbox(
+                f"图标 {i+1}",
+                ICON_OPTIONS,
+                index=ICON_OPTIONS.index(row["icon"]) if row["icon"] in ICON_OPTIONS else 0,
+                key=f"icon_{i}",
+                label_visibility="collapsed",
+            )
         with c3:
-            row["url"] = st.text_input(f"跳转链接 {i+1}", value=row["url"], key=f"url_{i}", label_visibility="collapsed")
-        with c4:
-            if st.button("❌", key=f"rm_{i}"):
-                st.session_state.item_rows.pop(i)
-                st.rerun()
+            row["url"] = st.selectbox(
+                f"跳转链接 {i+1}",
+                URL_OPTIONS,
+                index=URL_OPTIONS.index(row["url"]) if row["url"] in URL_OPTIONS else 0,
+                key=f"url_{i}",
+                label_visibility="collapsed",
+            )
 
-    if st.button("➕ 添加一条"):
-        st.session_state.item_rows.append({"icon": "", "url": ""})
-        st.rerun()
+    ca, cb = st.columns([1, 5])
+    with ca:
+        if st.button("➕ 添加一条"):
+            st.session_state.item_rows.append({"icon": ICON_OPTIONS[0], "url": URL_OPTIONS[0]})
+            st.rerun()
 
 st.divider()
 
@@ -259,7 +274,7 @@ st.divider()
 c_cancel, c_draft, c_publish = st.columns([6, 2, 2])
 with c_draft:
     if st.button("保存草稿", use_container_width=True):
-        st.info("草稿已保存（演示）")
+        st.info("草稿已保存")
 with c_publish:
     if st.button("发布策略", use_container_width=True):
         if time_window == "自定义时间段" and custom_start and custom_end:
@@ -288,7 +303,6 @@ with c_publish:
 
         base_cond = AUDIENCE_COND_MAP.get(base_audience, "")
 
-        # 产品自动映射：第 1 条 → P001，第 2 条 → P002 ...
         items_payload = []
         for idx, row in enumerate(st.session_state.item_rows):
             pid = f"P{idx+1:03d}"
@@ -336,12 +350,11 @@ with c_publish:
         save_json("algorithm_config.json", algo_data)
         ok2, msg2 = _github_commit_file("algorithm_config.json", algo_data)
 
-        st.success(f"✅ 策略已发布！人工配置: {msg1} ｜ 算法配置: {msg2}")
+        st.success(f"✅ 策略已发布！")
         st.rerun()
 
 st.markdown(
     f'<p class="footer-note">数据源: 外部坑位系统（{slot_source}） ｜ 配置目录: recommendation-demo/configs ｜ 今日: 2026-09-22</p>',
     unsafe_allow_html=True,
 )
-
   
