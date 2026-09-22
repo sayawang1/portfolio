@@ -1,4 +1,4 @@
-"""推荐系统运营后台 - 图标/链接编号自动映射产品"""
+"""推荐系统运营后台"""
 import streamlit as st
 import os
 import json
@@ -36,21 +36,22 @@ URL_OPTIONS = [
     "https://app.example.com/product/5",
 ]
 
+MODEL_TO_ALGO = {
+    "DeepFM v3（精排）": "deepfm",
+    "双塔召回（DSSM）": "dssm",
+    "字节千人千面": "bytedance_ps",
+    "协同过滤 ItemCF": "item_cf",
+    "内容召回 ContentBased": "content_based",
+}
+
 
 def _extract_number(icon_str, url_str):
-    """
-    从图标或链接里提取编号，作为产品映射依据
-    优先级：先看 URL（因为 URL 里的 /1 /2 /3 更明确），再看图标
-    """
-    # 从 URL 里提取最后一段数字
     m = re.search(r"/(\d+)/?$", url_str)
     if m:
         return int(m.group(1))
-    # 从图标里提取 campaign_icon_3.png → 3
     m = re.search(r"icon_(\d+)", icon_str)
     if m:
         return int(m.group(1))
-    # 兜底：找不到编号就返回 None
     return None
 
 
@@ -141,17 +142,17 @@ st.caption("人工 > 算法 > 兜底 ｜ 权重竞争：人工权重×100+算法
 
 TIME_OPTIONS = ["2026 Q3 大促周期 (9/1-9/30)", "长期有效", "2026 双十一周期 (11/1-11/11)", "自定义时间段"]
 AUDIENCE_OPTIONS = ["全量用户", "精准·VIP会员", "新用户", "高净值客户", "活跃用户", "流失预警用户"]
-MODEL_OPTIONS = ["DeepFM v3（精排）", "双塔召回（DSSM）", "字节千人千面", "协同过滤 ItemCF", "内容召回 ContentBased", "热门兜底 Popularity"]
+MODEL_OPTIONS = ["DeepFM v3（精排）", "双塔召回（DSSM）", "字节千人千面", "协同过滤 ItemCF", "内容召回 ContentBased"]
 CONDITION_OPTIONS = ["设备: iOS/Android", "地域: 上海/杭州", "时段: 10:00-22:00", "用户: 已登录"]
 ADV_OPTIONS = ["冷启动: 新用户走热门", "频控: 每用户日 3 次", "去重: 排除已点击"]
 
 AUDIENCE_COND_MAP = {
     "全量用户": "",
     "精准·VIP会员": "is_vip == 1",
-    "新用户": "is_new == 1",
+    "新用户": "is_registered == 1",
     "高净值客户": "aum_level == '高'",
-    "活跃用户": "is_active == 1",
-    "流失预警用户": "is_churn_risk == 1",
+    "活跃用户": "is_registered == 1",
+    "流失预警用户": "is_registered == 1",
 }
 
 slot_list, slot_source = get_slots_with_source()
@@ -215,11 +216,10 @@ with col_right:
         st.number_input("召回数量 Top-K", min_value=10, max_value=200, value=200, step=10)
         algo_weight = st.slider("策略权重（与人工竞争用，0-100）", 0, 100, 65, 5)
 
-        st.markdown("**AB 测试（作用于算法层）**")
         ab_enabled = st.toggle("启用 AB 测试", value=False)
         group_a = 70
-        ab_group_a_algo = "协同过滤 ItemCF"
-        ab_group_b_algo = "字节千人千面"
+        ab_group_a_algo = "item_cf"
+        ab_group_b_algo = "bytedance_ps"
         if ab_enabled:
             group_a = st.slider("A 组流量 %", 0, 100, 70, 5)
             d1, d2 = st.columns(2)
@@ -244,13 +244,13 @@ with st.container(border=True):
         icon_selected = st.multiselect(
             "图标展示",
             ICON_OPTIONS,
-            default=ICON_OPTIONS[:1],
+            default=[],
             key="icon_select",
         )
         url_selected = st.multiselect(
             "跳转链接",
             URL_OPTIONS,
-            default=URL_OPTIONS[:1],
+            default=[],
             key="url_select",
         )
         manual_weight = st.slider("人工权重（与算法竞争用，0-100）", 0, 100, 80, 5)
@@ -268,6 +268,7 @@ c_cancel, c_draft, c_publish = st.columns([6, 2, 2])
 with c_draft:
     if st.button("保存草稿", use_container_width=True):
         st.info("草稿已保存")
+
 with c_publish:
     if st.button("发布策略", use_container_width=True):
         if time_window == "自定义时间段" and custom_start and custom_end:
@@ -296,7 +297,7 @@ with c_publish:
 
         base_cond = AUDIENCE_COND_MAP.get(base_audience, "")
 
-        # ⭐ 关键改动：按图标/链接里的编号提取产品 ID
+        # 产品映射：按图标/链接里的编号提取
         items_payload = []
         max_len = max(len(icon_selected), len(url_selected))
         for idx in range(max_len):
@@ -333,22 +334,23 @@ with c_publish:
         save_json("manual_config.json", manual_data)
         _github_commit_file("manual_config.json", manual_data)
 
+        algo_id = MODEL_TO_ALGO.get(model, "item_cf")
         algo_data = load_json("algorithm_config.json", {"algorithms": [], "slot_algorithm_bind": {}})
         algo_data.setdefault("slot_algorithm_bind", {})[slot_id] = {
-            MODEL_TO_ALGO = {     "DeepFM v3（精排）": "deepfm",     "双塔召回（DSSM）": "dssm",     "字节千人千面": "bytedance_ps",     "协同过滤 ItemCF": "item_cf",     "内容召回 ContentBased": "content_based", } algo_id = MODEL_TO_ALGO.get(model, "item_cf")
+            "algo_id": algo_id,
             "algo_weight": algo_weight,
             "base_condition": base_cond,
             "ab_test": {
                 "enabled": ab_enabled,
                 "group_a_ratio": group_a if ab_enabled else 100,
-                "group_a_algo": "item_cf" if "ItemCF" in ab_group_a_algo else "bytedance_ps",
-                "group_b_algo": "bytedance_ps" if "字节" in ab_group_b_algo else "item_cf",
+                "group_a_algo": MODEL_TO_ALGO.get(ab_group_a_algo, "item_cf"),
+                "group_b_algo": MODEL_TO_ALGO.get(ab_group_b_algo, "bytedance_ps"),
             },
         }
         save_json("algorithm_config.json", algo_data)
         _github_commit_file("algorithm_config.json", algo_data)
 
-        st.success(f"✅ 策略已发布！产品映射：{', '.join([x['product_id'] for x in items_payload])}")
+        st.success("✅ 策略已发布！")
         st.rerun()
 
 st.markdown(
