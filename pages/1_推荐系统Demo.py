@@ -215,6 +215,21 @@ def get_fallback_result(slot_id, user, products, interactions, item_sim):
     }
 
 
+# ============ 合并工具：人工 + 算法，去重，取前 N 条 ----------
+def _merge_manual_algo(manual_items, algo_items, total=5):
+    """人工 items 放前面，算法 items 去重后追加，总条数最多 total 条"""
+    manual_list = manual_items.to_dict("records")
+    manual_ids = set(manual_items["product_id"].tolist())
+
+    algo_filtered = algo_items[~algo_items["product_id"].isin(manual_ids)].to_dict("records")
+
+    # 人工优先，再算法，取前 total 条
+    merged = manual_list + algo_filtered
+    merged = merged[:total]
+
+    return pd.DataFrame(merged)
+
+
 # ============ 统一决策入口 ============
 def execute_strategy(slot_id, user, interactions, item_sim, products):
     manual = get_manual_result(slot_id, user, products)
@@ -223,23 +238,58 @@ def execute_strategy(slot_id, user, interactions, item_sim, products):
     if manual and algo:
         manual_score = manual["weight"] * 100 + algo["weight"]
         algo_score = algo["weight"] * 100 + manual["weight"]
+
         if manual_score >= algo_score:
-            manual["competition"] = f"人工 {manual_score} vs 算法 {algo_score} → 人工胜出"
-            manual["ab_group"] = algo.get("ab_group", "-")
-            return manual
+            merged = _merge_manual_algo(manual["items"], algo["items"], total=5)
+            return {
+                "source": "manual",
+                "strategy_name": manual["strategy_name"],
+                "strategy_id": manual["strategy_id"],
+                "weight": manual["weight"],
+                "items": merged,
+                "manual_items": manual["items"],
+                "algo_items": algo["items"],
+                "icon": manual.get("icon", ""),
+                "jump_url": manual.get("jump_url", ""),
+                "audience": manual.get("audience", "-"),
+                "competition": f"人工 {manual_score} vs 算法 {algo_score} → 人工胜出",
+                "ab_group": algo.get("ab_group", "-"),
+            }
         else:
-            algo["competition"] = f"人工 {manual_score} vs 算法 {algo_score} → 算法胜出"
-            return algo
+            merged = _merge_manual_algo(algo["items"], manual["items"], total=5)
+            return {
+                "source": "algorithm",
+                "strategy_name": algo["strategy_name"],
+                "strategy_id": algo["strategy_id"],
+                "weight": algo["weight"],
+                "items": merged,
+                "manual_items": manual["items"],
+                "algo_items": algo["items"],
+                "competition": f"人工 {manual_score} vs 算法 {algo_score} → 算法胜出",
+                "ab_group": algo.get("ab_group", "-"),
+            }
     elif manual:
-        manual["competition"] = "仅人工命中"
-        return manual
+        return {
+            **manual,
+            "manual_items": manual["items"],
+            "algo_items": pd.DataFrame(),
+            "competition": "仅人工命中",
+        }
     elif algo:
-        algo["competition"] = "仅算法命中"
-        return algo
+        return {
+            **algo,
+            "manual_items": pd.DataFrame(),
+            "algo_items": algo["items"],
+            "competition": "仅算法命中",
+        }
     else:
         fallback = get_fallback_result(slot_id, user, products, interactions, item_sim)
-        fallback["competition"] = "均未命中 → 兜底"
-        return fallback
+        return {
+            **fallback,
+            "manual_items": pd.DataFrame(),
+            "algo_items": fallback["items"],
+            "competition": "均未命中 → 兜底",
+        }
 
 
 st.set_page_config(page_title="推荐系统 Demo", page_icon="🛒", layout="wide", initial_sidebar_state="collapsed")
@@ -280,7 +330,6 @@ st.markdown("""
 
 st.markdown("# 📈 推荐系统 · 选品 & 效果预览")
 
-# 清缓存按钮
 if st.button("🔄 清除缓存并刷新", key="clear_cache_btn"):
     st.cache_data.clear()
     st.cache_resource.clear()
@@ -291,7 +340,6 @@ products_all, product_source = get_products_with_source()
 interactions_all, interaction_source = get_interactions_with_source(users_all, products_all)
 item_sim_all = build_item_similarity(interactions_all)
 
-# 用户选择器
 c_u1, c_u2, c_u3 = st.columns([2, 3, 3])
 with c_u1:
     selected_user_id = st.selectbox("👤 选择用户", users_all["user_id"].tolist(), index=0)
@@ -301,7 +349,6 @@ with c_u2:
 with c_u3:
     st.markdown(f"**城市**：{user_row['city_tier']} ｜ **风险承受**：R{user_row['risk_tolerance']}")
 
-# 坑位选择
 slot_list, slot_source = get_slots_with_source()
 slot_map = {}
 for s in slot_list:
@@ -322,34 +369,39 @@ for i, label in enumerate(slot_map.keys()):
 
 slot_id = slot_map[st.session_state.selected_slot_label]
 
-# 执行策略
 result = execute_strategy(slot_id, user_row, interactions_all, item_sim_all, products_all)
 
-# 策略徽章（只显示来源 + 命中策略ID）
 st.markdown(
     f'<span class="cond-badge">策略来源: {result["source"]}</span>'
-    f'<span class="cond-badge">命中策略: {result.get("strategy_id", "-")}</span>',
+    f'<span class="cond-badge">命中策略: {result.get("strategy_id", "-")}</span>'
+    f'<span class="cond-badge">竞争: {result.get("competition", "-")}</span>',
     unsafe_allow_html=True,
 )
 
+# 人工命中时显示图标和跳转
 if result["source"] in ("manual", "fallback_manual"):
-    if result.get("icon"):
-        st.markdown(f"**图标**：`{result['icon']}`")
-    if result.get("jump_url"):
-        st.markdown(f"**跳转链接**：[{result['jump_url']}]({result['jump_url']})")
+    icon_val = result.get("icon", "")
+    url_val = result.get("jump_url", "")
+    if icon_val:
+        st.markdown(f"**图标**：`{icon_val}`")
+    else:
+        st.markdown("**图标**：（未配置）")
+    if url_val:
+        st.markdown(f"**跳转链接**：[{url_val}]({url_val})")
+    else:
+        st.markdown("**跳转链接**：（未配置）")
 
 st.markdown("---")
 
-# 展示逻辑
-items = result.get("items")
-if items is not None and len(items) > 0:
+merged_items = result.get("items")
+manual_items = result.get("manual_items")
+algo_items = result.get("algo_items")
+
+if merged_items is not None and len(merged_items) > 0:
     is_single_slot = "banner" in slot_id.lower() or "banner" in st.session_state.selected_slot_label.lower()
 
     if is_single_slot:
-        # Banner：最终展示位 1 条 + 列表 4 条 = 总共 5 条
-        final = items.iloc[0]
-        list_items = items.iloc[1:5]   # 去掉第 1 条（已经在最终展示位了），取 4 条
-
+        final = merged_items.iloc[0]
         st.markdown("### 🎯 最终展示位（唯一）")
         st.markdown(f"""
         <div class="final-card">
@@ -359,20 +411,16 @@ if items is not None and len(items) > 0:
         """, unsafe_allow_html=True)
 
         st.markdown("### 📋 推荐列表（候选池）")
-        for _, row in list_items.iterrows():
+        for _, row in merged_items.iterrows():
             st.markdown(f"""
             <div class="rec-card">
                 <h4>{row.get('name', row['product_id'])}</h4>
                 <div class="meta">类别：{row.get('category', '-')} ｜ 风险：R{row.get('risk_level', '-')} ｜ 热度：{row.get('popularity', '-')}</div>
             </div>
             """, unsafe_allow_html=True)
-
-        st.markdown('<div class="mock-note">以上为模拟数据，当前仅展示前 5 条。</div>', unsafe_allow_html=True)
     else:
-        # 非 Banner 坑位：列表最多 5 条
-        list_items = items.head(5)
         st.markdown("### 📋 推荐列表")
-        for _, row in list_items.iterrows():
+        for _, row in merged_items.iterrows():
             st.markdown(f"""
             <div class="rec-card">
                 <h4>{row.get('name', row['product_id'])}</h4>
@@ -380,7 +428,12 @@ if items is not None and len(items) > 0:
             </div>
             """, unsafe_allow_html=True)
 
-        st.markdown('<div class="mock-note">以上为模拟数据，当前仅展示前 5 条。</div>', unsafe_allow_html=True)
+    m_count = len(manual_items) if manual_items is not None else 0
+    a_count = len(algo_items) if algo_items is not None else 0
+    st.markdown(
+        f'<div class="mock-note">人工命中 {m_count} 条 ｜ 算法召回 {a_count} 条 ｜ 合并去重后取前 5 条（模拟数据）</div>',
+        unsafe_allow_html=True,
+    )
 else:
     st.warning("该坑位暂未配置策略，请在运营后台配置后查看效果。")
 
