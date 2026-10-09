@@ -1,1 +1,16 @@
-
+{
+  "categories": [
+    {
+      "name": "关键因素",
+      "children": [
+        {
+          "name": "服务敏感",
+          "rules": [
+            { "id": "r1", "keyword": "投诉", "action": "预警推送" },
+            { "id": "r2", "keyword": "曝光", "action": "预警推送" }
+          ]
+        }
+      ]
+    }
+  ]
+}
