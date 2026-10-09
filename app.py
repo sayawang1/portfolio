@@ -144,6 +144,22 @@ with col2:
     # 跳转按钮
     if st.button("🚀 进入推荐系统 Demo", use_container_width=True, type="primary"):
         st.switch_page("pages/1_推荐系统Demo.py")
+            # ================= 新增：智能客服项目卡片 =================
+    st.markdown("""
+    <div class="project-card">
+        <div class="project-title">🤖 智能客服与智能坐席辅助</div>
+        <div class="project-desc">
+            <b>业务背景：</b>华为云服务售前售后问题复杂，传统机器人语义识别不准导致租户流失、客服效率低下。<br>
+            <b>核心设计：</b>基于 RAG + 大模型 + 智能体，提供智能客服与智能坐席辅助，包含情绪识别、实时话术推荐、实时质检、服务总结等核心功能。
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # 智能客服跳转按钮
+    if st.button("🚀 进入智能客服 Demo", use_container_width=True, type="primary"):
+        st.switch_page("pages/3_智能客服_客户侧.py")
+
+    # 预留占位卡片（保持原样不动）
 
     # 预留占位卡片
     st.markdown("""
