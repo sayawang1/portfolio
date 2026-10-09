@@ -1,1 +1,18 @@
-
+{
+  "faqs": [
+    {
+      "id": "faq_001",
+      "question": "如何重置云服务器密码？",
+      "answer": "您可以在控制台进入云服务器详情页，点击“重置密码”，按提示操作。",
+      "category": "ECS",
+      "status": "online"
+    },
+    {
+      "id": "faq_002",
+      "question": "云服务发票怎么开？",
+      "answer": "进入费用中心，选择发票管理，按订单或按账期申请开票。",
+      "category": "费用",
+      "status": "online"
+    }
+  ]
+}
