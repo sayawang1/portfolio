@@ -1,14 +1,24 @@
 # 产品经理作品集 (Product Portfolio)
 
 ## 🌟 在线体验
-[点击访问我的作品集 Demo](https://saya-pm-portfolio.streamlit.app/%E6%8E%A8%E8%8D%90%E7%B3%BB%E7%BB%9FDemo)
+[点击访问我的作品集 Demo](https://saya-pm-portfolio.streamlit.app/)
 
-## 🎛️ 项目一：推荐策略配置平台
-**业务背景**：金融推荐系统需要同时满足运营可控（人工干预）、算法个性化（协同过滤）以及系统兜底（全量保底）。
+## 🎛️ 四个 Demo 一览
 
-**核心设计**：三级策略优先级架构（P1 人工强干预 > P2 算法推荐 > P3 全量兜底），流量按百分比切分，支持客群标签定向。
+| Demo | 页面 | 说明 |
+|---|---|---|
+| 🧪 推荐策略配置平台 | `pages/1` + `pages/2`（运营后台） | 三级策略优先级（人工 > 算法 > 兜底）、坑位/客群配置、A/B 分流 |
+| 🤖 智能客服与坐席辅助 | `pages/3` | PRD V2.0 完整 MVP（FastAPI 深度版，本地 `python start_all.py` 启动，面试现场演示） |
+| 🎯 精准营销平台 | `pages/4` | 客群筛选 → 策略配置 → 触达 → A/B 归因，演示"通用活动模型"抽象 |
+| 🏦 监管报送规则引擎 | `pages/5` | 校验规则系统化：现场改规则看异常变化，政策更新以配置生效 |
 
-**技术架构**：Streamlit + 策略模式 + 协同过滤算法。
+## 💻 本地运行
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+# 智能客服深度版（FastAPI）：
+python start_all.py
+```
 
 ## 👨‍💻 关于我
-MSc Data Science 背景，专注于 AI 产品经理方向，探索算法与业务规则的平衡。
+7 年+ B 端产品经验（华为云 / 平安 / 省属信托），专注 AI 产品与平台产品方向，探索算法与业务规则的平衡。持 PMP。
