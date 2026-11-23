@@ -398,6 +398,8 @@ with tab_demo:
     ss.setdefault("docs", [
         {"title": "如何重置云服务器密码？", "sys": "ECS · 常见问题", "time": "2026-10-29", "status": "已生效", "hits": 1284},
         {"title": "如何申请退还误购实例？", "sys": "计费 · 高风险问答", "time": "2026-10-25", "status": "已生效", "hits": 342},
+        {"title": "跨可用区迁移后公网 IP 是否变化？", "sys": "网络 · 配置指南", "time": "2026-11-03", "status": "待审核", "hits": 0},
+        {"title": "资源包到期后如何自动续费？", "sys": "计费 · 常见问题", "time": "2026-11-03", "status": "待审核", "hits": 0},
         {"title": "云服务器快照与备份的区别？", "sys": "存储 · 常见问题", "time": "2026-10-21", "status": "已生效", "hits": 747},
         {"title": "磁盘扩容后需要重启吗？", "sys": "ECS · 常见问题", "time": "2026-10-18", "status": "已生效", "hits": 742},
         {"title": "安全组放行端口配置步骤", "sys": "网络 · 配置指南", "time": "2026-10-12", "status": "已生效", "hits": 508},
@@ -709,8 +711,28 @@ with tab_demo:
                 else:
                     st.warning("请填写问题标题")
 
-        st.markdown('<div class="callout"><b>作业即标注闭环：</b>线上会话未命中的问题自动进入候选池 → 知识运营补录 → 审核生效 → 命中率回升；'
-                    '本月知识新增 42 条，其中 <b>68% 来自会话挖掘</b>，知识库覆盖率从 81% 提升到 93%。</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-t" style="margin-top:16px;">🗂 待审核知识 · 人工审核（模型不直接写库，作业标准审核）</div>', unsafe_allow_html=True)
+        _pending = [(i, d) for i, d in enumerate(ss["docs"]) if d["status"] == "待审核"]
+        if not _pending:
+            st.success("当前无待审核知识 —— 全部条目均已生效。可在上方「新增知识」提交一条，体验审核流。")
+        for i, d in _pending:
+            with st.container():
+                kA, kB, kC = st.columns([4, 1, 1])
+                with kA:
+                    st.markdown(f'<div class="panel" style="padding:10px 16px;font-size:13px;"><b style="color:#0F172A;">{d["title"]}</b>'
+                                f'<br><span style="color:#64748B;font-size:12px;">所属系统：{d["sys"]} ｜ 来源：会话挖掘候选 ｜ 提交后需人工审核回答是否准确</span></div>', unsafe_allow_html=True)
+                with kB:
+                    if st.button("✔ 审核通过", key=f"kb_ok_{i}", use_container_width=True):
+                        ss["docs"][i]["status"] = "已生效"
+                        st.toast(f"「{d['title']}」已生效并进入检索库", icon="✅")
+                        st.rerun()
+                with kC:
+                    if st.button("✖ 驳回", key=f"kb_no_{i}", use_container_width=True):
+                        ss["docs"][i]["status"] = "已驳回"
+                        st.toast("已驳回，退回候选池由知识运营修订", icon="↩")
+                        st.rerun()
+        st.markdown('<div class="callout"><b>作业即标注闭环：</b>线上会话未命中的问题自动进入候选池 → 知识运营补录 → <b>人工审核答案准确性后</b>才生效 → 命中率回升；'
+                    '模型只生成候选不直接写库（这是写保护风控）。本月知识新增 42 条，其中 <b>68% 来自会话挖掘</b>，知识库覆盖率从 81% 提升到 93%。</div>', unsafe_allow_html=True)
 
     # ============ 屏 5：数据看板 ============
     with s_dash:
