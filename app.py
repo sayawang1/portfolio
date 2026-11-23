@@ -38,7 +38,7 @@ header, [data-testid="stHeader"] { display: none !important; }
    ========================================================= */
 [data-testid="column"]:nth-of-type(1) {
     background-color: #FFFFFF !important;
-    border: 1px solid #E8EBED !important;
+    border: 1px solid #D5DDE2 !important;
     border-radius: 20px !important;
     padding: 2.5rem 2rem !important;
     box-shadow: 0 4px 16px rgba(0,0,0,.03) !important;
@@ -69,7 +69,7 @@ header, [data-testid="stHeader"] { display: none !important; }
 div[data-testid="stButton"] > button {
     width: 100% !important;
     background-color: #FFFFFF !important;
-    border: 1px solid #E8EBED !important;
+    border: 1px solid #D5DDE2 !important;
     border-radius: 12px !important;
     color: #111111 !important;
     justify-content: flex-start !important;
@@ -117,21 +117,21 @@ div[data-testid="stButton"] > button[kind="primary"] * {
 .chip {
     display: inline-block; background: #F5F6F7; color: #111111;
     padding: 6px 14px; border-radius: 16px; font-size: 13px;
-    margin: 0 6px 8px 0; border: 1px solid #E8EBED;
+    margin: 0 6px 8px 0; border: 1px solid #D5DDE2;
 }
 .chip-blue { background: #EAF4F1; color: #111111; border: 1px solid #D5E5DF; }
 
-.side-divider { border: none; border-top: 1px solid #E8EBED; margin: 20px 0 18px 0; }
+.side-divider { border: none; border-top: 1px solid #D5DDE2; margin: 20px 0 18px 0; }
 .side-label { color: #111111; font-size: 13px; font-weight: 700; margin-bottom: 12px; }
 .side-footer { color: #111111; font-size: 12px; margin-top: 16px; }
 .contact-box {
-    background: #FFFFFF; border: 1px solid #E8EBED;
+    background: #FFFFFF; border: 1px solid #D5DDE2;
     border-radius: 12px; padding: 12px 14px; display: flex; align-items: center; gap: 12px;
     margin-bottom: 10px;
 }
 .contact-icon {
     width: 34px; height: 34px; border-radius: 8px; background: #F5F6F7;
-    display: flex; align-items: center; justify-content: center; font-size: 16px; border: 1px solid #E8EBED;
+    display: flex; align-items: center; justify-content: center; font-size: 16px; border: 1px solid #D5DDE2;
 }
 .contact-info { display: flex; flex-direction: column; }
 .contact-label { font-size: 11.5px; color: #111111; margin-bottom: 2px; }
@@ -143,7 +143,7 @@ div[data-testid="stButton"] > button[kind="primary"] * {
    ========================================================= */
 .timeline-card {
     background: #FFFFFF; border-radius: 16px; padding: 24px 28px;
-    border: 1px solid #E8EBED; box-shadow: 0 4px 12px rgba(0,0,0,.03);
+    border: 1px solid #D5DDE2; box-shadow: 0 4px 12px rgba(0,0,0,.03);
     display: flex; justify-content: space-between; align-items: center;
     margin-bottom: 24px;
 }
@@ -157,7 +157,7 @@ div[data-testid="stButton"] > button[kind="primary"] * {
 a.matrix-card-link { text-decoration: none; display: block; color: inherit; width: 100%; }
 .matrix-card {
     background: #FFFFFF; border-radius: 16px; padding: 18px;
-    border: 1px solid #E8EBED; box-shadow: 0 3px 10px rgba(0,0,0,.03);
+    border: 1px solid #D5DDE2; box-shadow: 0 3px 10px rgba(0,0,0,.03);
     display: flex; flex-direction: row; gap: 22px; width: 100%;
     cursor: pointer; transition: transform .2s, box-shadow .2s, border-color .2s;
 }
@@ -185,10 +185,10 @@ a.matrix-card-link { text-decoration: none; display: block; color: inherit; widt
 .mc-chips { margin-top: auto; display: flex; flex-wrap: wrap; gap: 6px; }
 .mc-chip {
     display: inline-block; background: #F5F6F7; color: #111111;
-    border: 1px solid #E8EBED; border-radius: 8px; padding: 4px 12px; font-size: 12px;
+    border: 1px solid #D5DDE2; border-radius: 8px; padding: 4px 12px; font-size: 12px;
 }
 
-.panel { background: #FFFFFF; border-radius: 16px; padding: 32px; border: 1px solid #E8EBED; box-shadow: 0 4px 12px rgba(0,0,0,.03); }
+.panel { background: #FFFFFF; border-radius: 16px; padding: 32px; border: 1px solid #D5DDE2; box-shadow: 0 4px 12px rgba(0,0,0,.03); }
 </style>
 """, unsafe_allow_html=True)
 
