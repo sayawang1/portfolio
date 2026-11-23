@@ -57,10 +57,7 @@ header, [data-testid="stHeader"] { display: none !important; }
     gap: 0 !important;
 }
 
-/* 强行将“联系关注”踢到最底部 */
-[data-testid="column"]:nth-of-type(1) > div[data-testid="stVerticalBlock"] > div:last-child {
-    margin-top: auto !important;
-}
+/* 导航按钮紧跟标签，不再把联系块顶到底部 */
 
 /* =========================================================
    3. 按钮强杀原生蓝色 (浅绿底黑字)
@@ -121,9 +118,7 @@ div[data-testid="stButton"] > button[kind="primary"] * {
 }
 .chip-blue { background: #EAF4F1; color: #111111; border: 1px solid #D5E5DF; }
 
-.side-divider { border: none; border-top: 1px solid #BFC9D1; margin: 20px 0 18px 0; }
 .side-label { color: #111111; font-size: 13px; font-weight: 700; margin-bottom: 12px; }
-.side-footer { color: #111111; font-size: 12px; margin-top: 16px; }
 .contact-box {
     background: #FFFFFF; border: 1px solid #BFC9D1;
     border-radius: 12px; padding: 12px 14px; display: flex; align-items: center; gap: 12px;
@@ -189,6 +184,17 @@ a.matrix-card-link { text-decoration: none; display: block; color: inherit; widt
 }
 
 .panel { background: #FFFFFF; border-radius: 16px; padding: 32px; border: 1px solid #BFC9D1; box-shadow: 0 4px 12px rgba(0,0,0,.03); }
+
+/* 页面底部：联系 / 关注（从左侧栏移下来） */
+.footer-contact {
+    background: #FFFFFF; border-radius: 16px; padding: 22px 28px;
+    border: 1px solid #BFC9D1; box-shadow: 0 4px 12px rgba(0,0,0,.03);
+    margin-top: 24px;
+}
+.footer-contact-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.footer-contact-title { color: #000000; font-size: 16px; font-weight: 800; }
+.footer-contact .contact-box { margin-bottom: 0; }
+.footer-copy { color: #111111; font-size: 12px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -247,20 +253,6 @@ with side:
         if st.button("🗂 项目", use_container_width=True, key="nav_projects",
                      type="primary" if ss["nav_tab"] == "项目" else "secondary"):
             ss["nav_tab"] = "项目"; st.rerun()
-
-        # 联系方式 (由于 CSS 中有 margin-top: auto，它会被推到最底)
-        st.markdown("""
-        <hr class="side-divider">
-        <div class="side-label">联系 / 关注</div>
-        <div class="contact-box">
-            <div class="contact-icon">✉️</div>
-            <div class="contact-info">
-                <div class="contact-label">Email</div>
-                <a class="contact-value" href="mailto:saya_jing@163.com">saya_jing@163.com</a>
-            </div>
-        </div>
-        <div class="side-footer">© saya</div>
-        """, unsafe_allow_html=True)
 
 # ================= 右侧：内容区 =================
 CARD_RECO = """
@@ -375,3 +367,20 @@ with main:
         </div>
         """, unsafe_allow_html=True)
         render_projects()
+
+    # ===== 页面底部：联系 / 关注（所有 Tab 通用） =====
+    st.markdown("""
+    <div class="footer-contact">
+        <div class="footer-contact-head">
+            <div class="footer-contact-title">联系 / 关注</div>
+            <div class="footer-copy">© saya</div>
+        </div>
+        <div class="contact-box">
+            <div class="contact-icon">✉️</div>
+            <div class="contact-info">
+                <div class="contact-label">Email</div>
+                <a class="contact-value" href="mailto:saya_jing@163.com">saya_jing@163.com</a>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
